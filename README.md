@@ -1,5 +1,5 @@
 # What is this?
-Academic project for a token ring simulation -- Object Programming class
+Academic project for a token ring simulation -- Object Oriented Programming class
 
 # Why
 For fun
