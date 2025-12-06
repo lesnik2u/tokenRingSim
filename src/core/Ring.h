@@ -100,3 +100,4 @@ private:
     std::vector<PendingMessage> messageQueue;
     
     auto getNextNode(int currentNodeId) -> Node*;
+};

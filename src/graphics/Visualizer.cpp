@@ -8,7 +8,7 @@ Visualizer::Visualizer() {
     camera.zoom = 1.0f;
 }
 
-auto Visualizer::handleInput() -> void {
+void Visualizer::handleInput() {
     float wheel = GetMouseWheelMove();
     if (wheel != 0) {
         float zoomIncrement = 0.1f;
@@ -45,11 +45,11 @@ auto Visualizer::handleInput() -> void {
     }
 }
 
-auto Visualizer::beginCamera() -> void { BeginMode2D(camera); }
+void Visualizer::beginCamera() { BeginMode2D(camera); }
 
-auto Visualizer::endCamera() -> void { EndMode2D(); }
+void Visualizer::endCamera() { EndMode2D(); }
 
-auto Visualizer::spawnParticles(Vector2 position, Color color, int count) -> void {
+void Visualizer::spawnParticles(Vector2 position, Color color, int count) {
     for (int i = 0; i < count; ++i) {
         float angle = (GetRandomValue(0, 360) * PI) / 180.0f;
         float speed = GetRandomValue(20, 60);
@@ -66,7 +66,7 @@ auto Visualizer::spawnParticles(Vector2 position, Color color, int count) -> voi
     }
 }
 
-auto Visualizer::updateParticles(float dt) -> void {
+void Visualizer::updateParticles(float dt) {
     for (auto it = particles.begin(); it != particles.end();) {
         it->lifetime += dt;
         it->position.x += it->velocity.x * dt;
@@ -82,7 +82,7 @@ auto Visualizer::updateParticles(float dt) -> void {
     }
 }
 
-auto Visualizer::drawParticles(float dt) -> void {
+void Visualizer::drawParticles(float dt) {
     updateParticles(dt);
 
     for (const auto &p : particles) {
@@ -93,14 +93,14 @@ auto Visualizer::drawParticles(float dt) -> void {
     }
 }
 
-auto Visualizer::addTokenTrailPoint(Vector2 point) -> void {
+void Visualizer::addTokenTrailPoint(Vector2 point) {
     tokenTrail.push_back(point);
     if (tokenTrail.size() > 50) {
         tokenTrail.erase(tokenTrail.begin());
     }
 }
 
-auto Visualizer::drawTokenTrail() -> void {
+void Visualizer::drawTokenTrail() {
     for (size_t i = 1; i < tokenTrail.size(); ++i) {
         float alpha = static_cast<float>(i) / tokenTrail.size();
         Color col = RED;
@@ -110,7 +110,7 @@ auto Visualizer::drawTokenTrail() -> void {
     }
 }
 
-auto Visualizer::drawRingGlow(const Ring &ring) -> void {
+void Visualizer::drawRingGlow(const Ring &ring) {
     const auto &nodes = ring.getNodes();
 
     for (size_t i = 0; i < nodes.size(); ++i) {
@@ -127,7 +127,7 @@ auto Visualizer::drawRingGlow(const Ring &ring) -> void {
     }
 }
 
-auto Visualizer::drawRing(const Ring &ring, float dt) -> void {
+void Visualizer::drawRing(const Ring &ring, float dt) {
     pulseTimer += dt;
 
     drawRingGlow(ring);
@@ -173,7 +173,7 @@ auto Visualizer::drawRing(const Ring &ring, float dt) -> void {
     drawParticles(dt);
 }
 
-auto Visualizer::drawNode(const Node &node, bool hasToken) -> void {
+void Visualizer::drawNode(const Node &node, bool hasToken) {
     Vector2 pos = node.getPosition();
 
     // Pulsing animation when has token
@@ -208,7 +208,7 @@ auto Visualizer::drawNode(const Node &node, bool hasToken) -> void {
     DrawText(text, pos.x - textWidth / 2, pos.y - 8, 16, DARKBLUE);
 }
 
-auto Visualizer::drawToken(Vector2 from, Vector2 to, float progress) -> void {
+void Visualizer::drawToken(Vector2 from, Vector2 to, float progress) {
     Vector2 pos = {from.x + (to.x - from.x) * progress, from.y + (to.y - from.y) * progress};
 
     // Pulsing token
@@ -228,7 +228,7 @@ auto Visualizer::drawToken(Vector2 from, Vector2 to, float progress) -> void {
     DrawCircleLines(pos.x, pos.y, tokenRadius, MAROON);
 }
 
-auto Visualizer::drawConnections(const Ring &ring) -> void {
+void Visualizer::drawConnections(const Ring &ring) {
     const auto &nodes = ring.getNodes();
 
     for (size_t i = 0; i < nodes.size(); ++i) {
@@ -240,7 +240,7 @@ auto Visualizer::drawConnections(const Ring &ring) -> void {
     }
 }
 
-auto Visualizer::drawDataDistribution(const Ring &ring, Vector2 position) -> void {
+void Visualizer::drawDataDistribution(const Ring &ring, Vector2 position) {
     const auto &nodes = ring.getNodes();
 
     for (size_t i = 0; i < nodes.size(); ++i) {
@@ -268,7 +268,7 @@ auto Visualizer::drawDataDistribution(const Ring &ring, Vector2 position) -> voi
     }
 }
 
-auto Visualizer::startDataTransfer(Vector2 from, Vector2 to, std::string key) -> void {
+void Visualizer::startDataTransfer(Vector2 from, Vector2 to, std::string key) {
     DataTransfer transfer;
     transfer.fromPos = from;
     transfer.toPos = to;
@@ -283,7 +283,7 @@ auto Visualizer::startDataTransfer(Vector2 from, Vector2 to, std::string key) ->
     activeTransfers.push_back(transfer);
 }
 
-auto Visualizer::drawDataTransfers(float dt) -> void {
+void Visualizer::drawDataTransfers(float dt) {
     for (auto it = activeTransfers.begin(); it != activeTransfers.end();) {
         it->progress += dt * 0.8f;  // Speed of transfer
 
