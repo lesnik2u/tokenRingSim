@@ -31,6 +31,7 @@ private:
     bool ringFormationEnabled{true};
 
     Visualizer* visualizer{nullptr};
+    int ringId{-1}; // Unique ID for this ring, set by SimulationManager
 
 public:
     Ring(Vector2 center, float radius);
@@ -53,6 +54,7 @@ public:
 
     auto addNode(std::string name) -> void;
     auto removeLastNode() -> void;
+    auto removeNode(int nodeId) -> void;
     auto spawnToken() -> void;
     auto update(float dt) -> void;
 
@@ -100,4 +102,16 @@ private:
     std::vector<PendingMessage> messageQueue;
     
     auto getNextNode(int currentNodeId) -> Node*;
+
+    int selectedNodeId = -1; // -1 indicates no node is selected
+
+public:
+    auto setSelectedNode(int id) -> void { selectedNodeId = id; }
+    auto getSelectedNodeId() const -> int { return selectedNodeId; }
+    auto getSelectedNode() const -> Node*;
+
+    auto setRingId(int id) -> void { ringId = id; }
+    auto getRingId() const -> int { return ringId; }
+
+
 };

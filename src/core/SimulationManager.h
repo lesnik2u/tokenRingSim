@@ -35,4 +35,8 @@ private:
 
     // Input state
     Vector2 lastMousePos{0,0};
+
+    // Helper to find node by ID across all rings
+    auto findNodeById(int nodeId) const -> Node*;
+
 };

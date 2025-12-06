@@ -65,7 +65,9 @@ add_executable(TokenRing
     src/core/Node.cpp
     src/core/Token.cpp
     src/core/Ring.cpp
+    src/core/SimulationManager.cpp
     src/graphics/Visualizer.cpp
+    src/graphics/UserInterface.cpp
 )
 
 # Include directories

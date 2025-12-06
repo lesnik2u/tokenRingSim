@@ -56,4 +56,9 @@ public:
     auto addTokenTrailPoint(Vector2 point) -> void;
     auto drawDataDistribution(const Ring &ring, Vector2 position) -> void;
     auto startDataTransfer(Vector2 from, Vector2 to, std::string key) -> void;
+    auto checkNodeClick(const Ring &ring) -> int; // Returns the ID of the clicked node, or -1 if no node was clicked
+    auto drawSelectedNodeHighlight(const Node &node) -> void;
+
+private:
+    int selectedNodeId = -1; // -1 indicates no node is selected
 };

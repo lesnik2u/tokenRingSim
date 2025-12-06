@@ -16,7 +16,7 @@ private:
     bool showDebugPanel{true};
     bool showNodeInspector{true};
     bool showNetworkController{true};
-    bool showTrafficLog{true};
+    // bool showTrafficLog{true};
     int replicationFactor{2}; // UI state for RF
     float messageSpeed{0.5f}; // UI state for speed
     bool mobilityEnabled{true};

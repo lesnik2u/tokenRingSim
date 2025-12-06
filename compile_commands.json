@@ -67,9 +67,21 @@
 },
 {
   "directory": "/Users/kamillesniak/Studia/Projekt/build",
+  "command": "/usr/bin/c++ -DGL_SILENCE_DEPRECATION -DGRAPHICS_API_OPENGL_33 -DPLATFORM_DESKTOP -I/Users/kamillesniak/Studia/Projekt/src -I/Users/kamillesniak/Studia/Projekt/build/_deps/imgui-src -I/Users/kamillesniak/Studia/Projekt/build/_deps/rlimgui-src -I/Users/kamillesniak/Studia/Projekt/build/_deps/raylib-src/src -I/Users/kamillesniak/Studia/Projekt/build/_deps/raylib-src/src/external/glfw/include -std=gnu++2b -arch arm64 -o CMakeFiles/TokenRing.dir/src/core/SimulationManager.cpp.o -c /Users/kamillesniak/Studia/Projekt/src/core/SimulationManager.cpp",
+  "file": "/Users/kamillesniak/Studia/Projekt/src/core/SimulationManager.cpp",
+  "output": "/Users/kamillesniak/Studia/Projekt/build/CMakeFiles/TokenRing.dir/src/core/SimulationManager.cpp.o"
+},
+{
+  "directory": "/Users/kamillesniak/Studia/Projekt/build",
   "command": "/usr/bin/c++ -DGL_SILENCE_DEPRECATION -DGRAPHICS_API_OPENGL_33 -DPLATFORM_DESKTOP -I/Users/kamillesniak/Studia/Projekt/src -I/Users/kamillesniak/Studia/Projekt/build/_deps/imgui-src -I/Users/kamillesniak/Studia/Projekt/build/_deps/rlimgui-src -I/Users/kamillesniak/Studia/Projekt/build/_deps/raylib-src/src -I/Users/kamillesniak/Studia/Projekt/build/_deps/raylib-src/src/external/glfw/include -std=gnu++2b -arch arm64 -o CMakeFiles/TokenRing.dir/src/graphics/Visualizer.cpp.o -c /Users/kamillesniak/Studia/Projekt/src/graphics/Visualizer.cpp",
   "file": "/Users/kamillesniak/Studia/Projekt/src/graphics/Visualizer.cpp",
   "output": "/Users/kamillesniak/Studia/Projekt/build/CMakeFiles/TokenRing.dir/src/graphics/Visualizer.cpp.o"
+},
+{
+  "directory": "/Users/kamillesniak/Studia/Projekt/build",
+  "command": "/usr/bin/c++ -DGL_SILENCE_DEPRECATION -DGRAPHICS_API_OPENGL_33 -DPLATFORM_DESKTOP -I/Users/kamillesniak/Studia/Projekt/src -I/Users/kamillesniak/Studia/Projekt/build/_deps/imgui-src -I/Users/kamillesniak/Studia/Projekt/build/_deps/rlimgui-src -I/Users/kamillesniak/Studia/Projekt/build/_deps/raylib-src/src -I/Users/kamillesniak/Studia/Projekt/build/_deps/raylib-src/src/external/glfw/include -std=gnu++2b -arch arm64 -o CMakeFiles/TokenRing.dir/src/graphics/UserInterface.cpp.o -c /Users/kamillesniak/Studia/Projekt/src/graphics/UserInterface.cpp",
+  "file": "/Users/kamillesniak/Studia/Projekt/src/graphics/UserInterface.cpp",
+  "output": "/Users/kamillesniak/Studia/Projekt/build/CMakeFiles/TokenRing.dir/src/graphics/UserInterface.cpp.o"
 },
 {
   "directory": "/Users/kamillesniak/Studia/Projekt/build",

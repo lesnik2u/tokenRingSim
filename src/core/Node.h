@@ -15,6 +15,8 @@ private:
     bool hasToken{false};
     bool isDragging{false};
     bool isMobile{false};
+    bool activeStatus{true}; // Nodes are active by default
+    bool isSelected{false};
     std::vector<std::unique_ptr<DataItem>> storedData;
     int tokenRangeStart{0}; // Angle in degrees
     int tokenRangeEnd{0};
@@ -71,6 +73,12 @@ public:
     auto getTokenRangeStart() const -> int { return tokenRangeStart; }
     auto getTokenRangeEnd() const -> int { return tokenRangeEnd; }
     auto ownsHash(int hash) const -> bool;
+
+    auto isActive() const -> bool { return activeStatus; }
+    auto setActive(bool active) -> void { activeStatus = active; }
+
+    auto getSelected() const -> bool { return isSelected; }
+    auto setSelected(bool selected) -> void { isSelected = selected; }
 
     friend class Ring;
     friend class Visualizer;

@@ -132,8 +132,8 @@ void Visualizer::drawRing(const Ring &ring, float dt) {
 
     drawRingGlow(ring);
     drawConnections(ring);
-    drawTokenTrail();
-    drawDataTransfers(dt);
+    // drawTokenTrail();
+    // drawDataTransfers(dt);
 
     const auto &nodes = ring.getNodes();
     const auto *token = ring.getToken();
@@ -161,8 +161,8 @@ void Visualizer::drawRing(const Ring &ring, float dt) {
         Vector2 tokenPos = {from.x + (to.x - from.x) * progress,
                             from.y + (to.y - from.y) * progress};
 
-        addTokenTrailPoint(tokenPos);
-        drawToken(from, to, progress);
+        // addTokenTrailPoint(tokenPos);
+        // drawToken(from, to, progress);
 
         // Spawn particles occasionally
         if (GetRandomValue(0, 100) < 30) {
@@ -175,6 +175,10 @@ void Visualizer::drawRing(const Ring &ring, float dt) {
 
 void Visualizer::drawNode(const Node &node, bool hasToken) {
     Vector2 pos = node.getPosition();
+
+    if (node.getSelected()) {
+        drawSelectedNodeHighlight(node);
+    }
 
     // Pulsing animation when has token
     float pulseScale = 1.0f;
@@ -316,3 +320,29 @@ void Visualizer::drawDataTransfers(float dt) {
         ++it;
     }
 }
+
+int Visualizer::checkNodeClick(const Ring &ring) {
+    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
+        Vector2 mouseScreenPos = GetMousePosition();
+        Vector2 mouseWorldPos = GetScreenToWorld2D(mouseScreenPos, camera);
+
+        for (const auto &node : ring.getNodes()) {
+            // Assuming a node radius of 30.0f for clickable area
+            float nodeRadius = 30.0f;
+            if (CheckCollisionPointCircle(mouseWorldPos, node->getPosition(), nodeRadius)) {
+                return node->getId();
+            }
+        }
+        selectedNodeId = -1; // No node clicked
+    }
+    return selectedNodeId;
+}
+
+void Visualizer::drawSelectedNodeHighlight(const Node &node) {
+    Vector2 pos = node.getPosition();
+    float highlightRadius = 35.0f + (sin(GetTime() * 5.0f) * 2.0f); // Pulsating effect
+    DrawCircleLines(pos.x, pos.y, highlightRadius, YELLOW);
+    DrawCircleLines(pos.x, pos.y, highlightRadius + 2, YELLOW);
+}
+
+

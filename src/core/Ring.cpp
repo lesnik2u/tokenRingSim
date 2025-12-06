@@ -135,6 +135,30 @@ auto Ring::removeLastNode() -> void {
     assignTokenRanges();
 }
 
+auto Ring::removeNode(int nodeId) -> void {
+    // Find the node to remove
+    auto it = std::remove_if(nodes.begin(), nodes.end(), [nodeId](const std::unique_ptr<Node>& n){
+        return n->getId() == nodeId;
+    });
+
+    if (it != nodes.end()) {
+        // If the removed node was the token holder, move the token to the next node
+        if (token && (*it)->getId() == token->getCurrentNodeId()) {
+            // Find the next node in the ring after removal
+            // For simplicity, for now, we'll just invalidate the token.
+            // A more robust solution would reassign it to the *next* logical node.
+            token.reset(); // Invalidate the token
+        }
+        
+        nodes.erase(it, nodes.end());
+        assignTokenRanges();
+        repartitionData();
+        LOG_INFO("Node with ID {} removed from Ring {}", nodeId, ringId);
+    } else {
+        LOG_ERROR("Attempted to remove non-existent Node with ID {} from Ring {}", nodeId, ringId);
+    }
+}
+
 auto Ring::spawnToken() -> void {
     if (!nodes.empty() && !token) {
         token = std::make_unique<Token>(0);
@@ -612,3 +636,16 @@ auto Ring::forceRepartitionWithVisualization() -> void {
     // Now do actual repartition
     repartitionData();
 }
+
+auto Ring::getSelectedNode() const -> Node* {
+    if (selectedNodeId == -1) {
+        return nullptr;
+    }
+    for (const auto& node : nodes) {
+        if (node->getId() == selectedNodeId) {
+            return node.get();
+        }
+    }
+    return nullptr;
+}
+

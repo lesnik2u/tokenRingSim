@@ -18,7 +18,7 @@ auto UserInterface::render() -> void {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("Windows")) {
             ImGui::MenuItem("Network Controller", nullptr, &showNetworkController);
-            ImGui::MenuItem("Traffic Log", nullptr, &showTrafficLog);
+            // ImGui::MenuItem("Traffic Log", nullptr, &showTrafficLog);
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
@@ -27,7 +27,7 @@ auto UserInterface::render() -> void {
     if (showNetworkController) renderNetworkController();
     // Node Inspector is always active as popup/overlay when nodes are selected
     renderNodeInspector();
-    if (showTrafficLog) renderTrafficLog();
+    // if (showTrafficLog) renderTrafficLog();
     renderOverlay();
 
     rlImGuiEnd();
@@ -60,8 +60,8 @@ auto UserInterface::renderNetworkController() -> void {
         if (ImGui::Button("Create New Ring")) {
             float offset = sim.getRings().size() * 300.0f;
             auto& r = sim.addRing({640.0f + offset, 360.0f}, 200.0f);
-            r.addNode("Initial_Node");
-            r.addNode("Initial_Node_2");
+            r.addNode(std::format("Node_{}_{}", r.getRingId(), r.getNodeCount()));
+            r.addNode(std::format("Node_{}_{}", r.getRingId(), r.getNodeCount()));
             selectedRingIndex = sim.getRings().size() - 1; // Auto-select new ring
         }
     }
@@ -103,11 +103,7 @@ auto UserInterface::renderNetworkController() -> void {
     auto& ring = *rings[selectedRingIndex];
 
     if (ImGui::CollapsingHeader("Node Operations", ImGuiTreeNodeFlags_DefaultOpen)) {
-        // Control the FIRST ring for now, or selected nodes?
-        // Let's control the LAST created ring as "Active" context or just the first one
         if (!sim.getRings().empty()) {
-            auto& ring = *sim.getRings()[selectedRingIndex]; // Operate on selected ring
-            
             ImGui::Text("Operating on Ring #%d", (int)ring.getRingId());
             
             if (ImGui::Button("Add Node")) {
@@ -117,77 +113,11 @@ auto UserInterface::renderNetworkController() -> void {
             if (ImGui::Button("Remove Ring")) {
                 sim.removeRing(selectedRingIndex);
                 selectedRingIndex = -1; // Reset selection
-                // Note: Loop continues but 'ring' ref might be invalid?
-                // We should return immediately to avoid accessing destroyed ring
                 ImGui::End();
                 return;
             }
-
-            if (ImGui::Button("Remove Node") && ring.getNodeCount() > 2) {
-                ring.removeLastNode();
-            }
-            
-            if (ImGui::Button("Reorganize Topology")) {
-                ring.sortNodesByPosition();
-            }
-
-            ImGui::Checkbox("Enable Node Mobility", &mobilityEnabled);
-            
-            if (mobilityEnabled) {
-                ImGui::Indent();
-                ImGui::Checkbox("Ring Formation Force", &ringFormation);
-                for(auto& r : sim.getRings()) r->setRingFormation(ringFormation);
-                ImGui::Unindent();
-            }
-            
-            // Replication Factor Control
-            // Sync UI value with ring's actual value ONLY when selection changes
-            if (selectedRingIndex != lastSelectedRingIndex) {
-                replicationFactor = ring.getReplicationFactor();
-                lastSelectedRingIndex = selectedRingIndex;
-            }
-
-            ImGui::SliderInt("Replication Factor", &replicationFactor, 1, std::max(1, (int)ring.getNodeCount()));
-            if (ImGui::IsItemDeactivatedAfterEdit()) {
-                ring.setReplicationFactor(replicationFactor);
-                SimLogInfo("Replication Factor for Ring {} set to {}", ring.getRingId(), replicationFactor);
-            }
-            
-            // Message Speed Control
-            if (messageSpeed != ring.getMessageSpeed()) {
-                messageSpeed = ring.getMessageSpeed();
-            }
-            if (ImGui::SliderFloat("Transfer Speed", &messageSpeed, 0.1f, 5.0f)) {
-                ring.setMessageSpeed(messageSpeed);
-            }
         } else {
             ImGui::Text("No rings available.");
-        }
-        static char keyBuf[64] = "";
-        static char valueBuf[128] = "";
-
-        ImGui::InputText("Key", keyBuf, sizeof(keyBuf));
-        ImGui::InputText("Value", valueBuf, sizeof(valueBuf));
-
-        if (ImGui::Button("Insert Data")) {
-            if (strlen(keyBuf) > 0) {
-                ring.insertData(std::string(keyBuf), std::string(valueBuf));
-                keyBuf[0] = '\0';
-                valueBuf[0] = '\0';
-            }
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Random Insert")) {
-            std::string key = std::format("key_{}", GetRandomValue(1000, 9999));
-            std::string value = std::format("val_{}", GetRandomValue(100, 999));
-            ring.insertData(key, value);
-        }
-        ImGui::SameLine();
-        if (ImGui::Button("Delete Data")) {
-            if (strlen(keyBuf) > 0) {
-                ring.deleteData(std::string(keyBuf));
-                keyBuf[0] = '\0';
-            }
         }
     }
 
@@ -204,29 +134,36 @@ auto UserInterface::renderNodeInspector() -> void {
     
     for (Node* node : nodesToRender) {
         bool open = true;
-        std::string windowTitle = std::format("{}###Node_{}", node->getName(), node->getId());
-        
-        // Set default size/pos for new windows
-        ImGui::SetNextWindowSize({300, 400}, ImGuiCond_FirstUseEver);
+        // Set default position if the window is appearing for the first time
+        ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 350.0f, 50.0f), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize({300, 450}, ImGuiCond_FirstUseEver);
+
+        std::string windowTitle = std::format("{} (ID: {})###NodeInspector_{}", node->getName(), node->getId(), node->getId());
         
         if (ImGui::Begin(windowTitle.c_str(), &open)) {
+            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_GrabRounding, 3.0f);
+            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 3.0f);
+
+            // Node Details
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 1.0f, 1.0f), "Node Details");
+            ImGui::Separator();
+            ImGui::Text("Name: %s", std::string(node->getName()).c_str());
             ImGui::Text("ID: %d", node->getId());
-            ImGui::Text("Range: [%d - %d)", node->getTokenRangeStart(), node->getTokenRangeEnd());
+            ImGui::Text("Position: (%.1f, %.1f)", node->getPosition().x, node->getPosition().y);
+            ImGui::Text("Range: [%d° - %d°)", node->getTokenRangeStart(), node->getTokenRangeEnd());
             
             // Node Status Toggle
             bool isActive = node->isActive();
             if (ImGui::Checkbox("Active", &isActive)) {
                 node->setActive(isActive);
-                SimLogInfo("Node '{}' set to {}", node->getName(), isActive ? "Active" : "Offline");
+                LOG_INFO("Node '{}' set to {}", node->getName(), isActive ? "Active" : "Offline");
             }
             
             ImGui::SameLine();
             if (ImGui::Button("Remove Node")) {
                 // We need to find which ring this node belongs to
                 for(auto& ring : sim.getRings()) {
-                    // Checking if node is in this ring is slow but safe
-                    // Optimization: Node could store ringId?
-                    // For now, search by ID
                     bool found = false;
                     for(const auto& n : ring->getNodes()) {
                         if(n.get() == node) {
@@ -245,29 +182,43 @@ auto UserInterface::renderNodeInspector() -> void {
             }
             
             ImGui::Separator();
-            ImGui::Text("Stored Data (%zu items):", node->getDataCount());
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 1.0f, 1.0f), "Stored Data (%zu items):", node->getDataCount());
+            ImGui::Separator();
             
-            if (ImGui::BeginTable("Data", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable)) {
+            if (ImGui::BeginTable("Data", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY)) {
                 ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 60.0f);
                 ImGui::TableSetupColumn("Key");
+                ImGui::TableSetupColumn("Value");
                 ImGui::TableSetupColumn("Hash", ImGuiTableColumnFlags_WidthFixed, 40.0f);
                 ImGui::TableHeadersRow();
                 
                 for(const auto& data : node->getStoredData()) {
                     ImGui::TableNextRow();
                     ImGui::TableSetColumnIndex(0);
-                    if (data->getIsReplica()) ImGui::TextColored(ImVec4(0.8f, 0.5f, 0.8f, 1.0f), "Replica");
-                    else ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1.0f), "Primary");
+                    if (data->getIsReplica()) {
+                        ImGui::TextColored(ImVec4(0.8f, 0.5f, 0.8f, 1.0f), "Replica");
+                        if(ImGui::IsItemHovered()) ImGui::SetTooltip("This data item is a replica.");
+                    }
+                    else {
+                        ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1.0f), "Primary");
+                        if(ImGui::IsItemHovered()) ImGui::SetTooltip("This data item is primary.");
+                    }
                     
                     ImGui::TableSetColumnIndex(1);
                     ImGui::Text("%s", data->getKey().c_str());
-                    if(ImGui::IsItemHovered()) ImGui::SetTooltip("%s", data->getValue().c_str());
+                    if(ImGui::IsItemHovered()) ImGui::SetTooltip("Key: %s", data->getKey().c_str());
                     
                     ImGui::TableSetColumnIndex(2);
-                    ImGui::Text("%d", data->getHash());
+                    ImGui::Text("%s", data->getValue().c_str());
+                    if(ImGui::IsItemHovered()) ImGui::SetTooltip("Value: %s", data->getValue().c_str());
+                    
+                    ImGui::TableSetColumnIndex(3);
+                    ImGui::Text("%d°", data->getHash());
+                    if(ImGui::IsItemHovered()) ImGui::SetTooltip("Hash: %d degrees", data->getHash());
                 }
                 ImGui::EndTable();
             }
+            ImGui::PopStyleVar(3);
         }
         ImGui::End();
         
@@ -278,6 +229,7 @@ auto UserInterface::renderNodeInspector() -> void {
     }
 }
 
+/*
 auto UserInterface::renderTrafficLog() -> void {
     ImGui::SetNextWindowSize({500, 300}, ImGuiCond_FirstUseEver);
     ImGui::Begin("Traffic Log", &showTrafficLog);
@@ -298,3 +250,4 @@ auto UserInterface::renderTrafficLog() -> void {
     ImGui::EndChild();
     ImGui::End();
 }
+*/
