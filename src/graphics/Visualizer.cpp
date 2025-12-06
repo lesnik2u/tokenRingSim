@@ -224,13 +224,14 @@ void Visualizer::drawDataDistribution(const Ring &ring, Vector2 position) {
     }
 }
 
-void Visualizer::startDataTransfer(Vector2 from, Vector2 to, std::string key) {
+void Visualizer::startDataTransfer(Vector2 from, Vector2 to, std::string key, bool isReplication) {
     DataTransfer transfer;
     transfer.fromPos = from;
     transfer.toPos = to;
     transfer.progress = 0.0f;
     transfer.dataKey = std::move(key);
-    transfer.color = Color{
+    transfer.isReplication = isReplication;
+    transfer.color = isReplication ? Color{0, 200, 0, 255} : Color{ // Green for replicas
         static_cast<unsigned char>(GetRandomValue(100, 255)),
         static_cast<unsigned char>(GetRandomValue(100, 255)),
         static_cast<unsigned char>(GetRandomValue(100, 255)),

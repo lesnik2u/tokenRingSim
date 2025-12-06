@@ -5,6 +5,7 @@
 #include <raylib.h>
 #include <vector>
 #include "graphics/Visualizer.h"
+#include "utils/Logger.h" // Added include
 
 class Visualizer;
 
@@ -25,8 +26,10 @@ private:
     Vector2 center;
     float radius;
     int nextNodeId{0};
+    int replicationFactor{3}; // Default replication factor
 
     auto reorganizeNodes() -> void;
+    auto findNodeIndexById(int nodeId) const -> int; // Returns -1 if not found
 
     bool ringFormationEnabled{true};
 
@@ -75,6 +78,15 @@ public:
 
     auto setRingFormation(bool enabled) -> void { ringFormationEnabled = enabled; }
     auto getRingFormation() const -> bool { return ringFormationEnabled; }
+    auto getReplicationFactor() const -> int { return replicationFactor; }
+    auto setReplicationFactor(int rf) -> void {
+        if (rf > 0 && rf <= nodes.size()) { // Ensure RF is valid
+            replicationFactor = rf;
+            repartitionData(); // Re-replicate data if RF changes
+        } else {
+            APP_LOG_ERROR("Invalid replication factor: {} for ring with {} nodes", rf, nodes.size());
+        }
+    }
 
     auto insertData(std::string key, std::string value) -> void;
     auto findDataOwner(int hash) -> Node *;

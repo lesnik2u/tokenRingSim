@@ -10,6 +10,7 @@ struct DataTransfer {
     float progress;
     std::string dataKey;
     Color color;
+    bool isReplication; // To differentiate primary from replica transfers
 };
 
 class Visualizer {
@@ -46,7 +47,7 @@ public:
     auto getCamera() const -> const Camera2D & { return camera; }
     auto addTokenTrailPoint(Vector2 point) -> void;
     auto drawDataDistribution(const Ring &ring, Vector2 position) -> void;
-    auto startDataTransfer(Vector2 from, Vector2 to, std::string key) -> void;
+    auto startDataTransfer(Vector2 from, Vector2 to, std::string key, bool isReplication = false) -> void;
     auto checkNodeClick(const Ring &ring) -> int; // Returns the ID of the clicked node, or -1 if no node was clicked
     auto drawSelectedNodeHighlight(const Node &node) -> void;
 

@@ -122,6 +122,13 @@ auto UserInterface::renderNetworkController() -> void {
     }
 
     ImGui::Separator();
+    // Replication Factor Control
+    int currentRF = ring.getReplicationFactor();
+    if (ImGui::SliderInt("Replication Factor", &currentRF, 1, std::max(1, (int)ring.getNodeCount()))) {
+        ring.setReplicationFactor(currentRF);
+    }
+    
+    ImGui::Separator();
     ImGui::Text("Data Management:");
 
     static char keyBuf[64] = "";
@@ -182,7 +189,7 @@ auto UserInterface::renderNodeInspector() -> void {
             bool isActive = node->isActive();
             if (ImGui::Checkbox("Active", &isActive)) {
                 node->setActive(isActive);
-                LOG_INFO("Node '{}' set to {}", node->getName(), isActive ? "Active" : "Offline");
+                APP_LOG_INFO("Node '{}' set to {}", node->getName(), isActive ? "Active" : "Offline");
             }
             
             ImGui::SameLine();

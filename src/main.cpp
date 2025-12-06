@@ -9,7 +9,7 @@
 #include <raylib.h>
 
 int main() {
-    LOG_INFO("Application starting");
+    APP_LOG_INFO("Application starting");
 
     const int screenWidth = 1280;
     const int screenHeight = 720;

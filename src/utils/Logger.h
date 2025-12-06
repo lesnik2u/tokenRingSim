@@ -47,6 +47,6 @@ public:
     }
 };
 
-#define LOG_INFO(...) Logger::instance().info(__VA_ARGS__)
-#define LOG_DEBUG(...) Logger::instance().debug(__VA_ARGS__)
-#define LOG_ERROR(...) Logger::instance().error(__VA_ARGS__)
+#define APP_LOG_INFO(...) Logger::instance().info(__VA_ARGS__)
+#define APP_LOG_DEBUG(...) Logger::instance().debug(__VA_ARGS__)
+#define APP_LOG_ERROR(...) Logger::instance().error(__VA_ARGS__)

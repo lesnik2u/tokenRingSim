@@ -3,7 +3,7 @@
 #include <algorithm>
 
 SimulationManager::SimulationManager() {
-    LOG_INFO("Simulation Manager initialized");
+    APP_LOG_INFO("Simulation Manager initialized");
 }
 
 auto SimulationManager::addRing(Vector2 center, float radius) -> Ring& {
@@ -21,7 +21,7 @@ auto SimulationManager::removeRing(int index) -> void {
     clearSelection();
     
     rings.erase(rings.begin() + index);
-    LOG_INFO("Removed ring at index {}", index);
+    APP_LOG_INFO("Removed ring at index {}", index);
 }
 
 auto SimulationManager::update(float dt) -> void {
@@ -89,7 +89,7 @@ auto SimulationManager::handleInput(const Camera2D& camera) -> void {
             Node* clickedNode = findNodeById(clickedNodeId);
             if (clickedNode) {
                 selectNode(clickedNode, shiftDown);
-                LOG_INFO("Selected Node: {}", clickedNode->getName());
+                APP_LOG_INFO("Selected Node: {}", clickedNode->getName());
             }
         } else if (!shiftDown) {
             // Clicked empty space -> clear selection if not multi-selecting

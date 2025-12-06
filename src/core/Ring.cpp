@@ -10,7 +10,7 @@
 #include <utility>
 
 Ring::Ring(Vector2 center, float radius) : center(center), radius(radius) {
-    LOG_INFO("Ring created at ({}, {}) with radius {}", center.x, center.y, radius);
+    APP_LOG_INFO("Ring created at ({}, {}) with radius {}", center.x, center.y, radius);
 }
 // Copy constructor
 Ring::Ring(const Ring &other)
@@ -108,7 +108,7 @@ auto Ring::operator*=(float scale) -> Ring & {
 
 auto Ring::addNode(std::string name) -> void {
     auto node = std::make_unique<Node>(nextNodeId++, std::move(name), 0.0f);
-    LOG_DEBUG("Adding node: id={}, name={}", node->getId(), node->getName());
+    APP_LOG_DEBUG("Adding node: id={}, name={}", node->getId(), node->getName());
     nodes.push_back(std::move(node));
     reorganizeNodes();
     assignTokenRanges(); // Assign ranges immediately
@@ -120,11 +120,11 @@ auto Ring::removeLastNode() -> void {
         return;
 
     if (nodes.size() <= 2) {
-        LOG_ERROR("Cannot remove node: minimum 2 nodes required");
+        APP_LOG_ERROR("Cannot remove node: minimum 2 nodes required");
         return;
     }
 
-    LOG_DEBUG("Removing node: {}", nodes.back()->getName());
+    APP_LOG_DEBUG("Removing node: {}", nodes.back()->getName());
 
     // First repartition to move data away from dying node
     repartitionData();
@@ -153,9 +153,9 @@ auto Ring::removeNode(int nodeId) -> void {
         nodes.erase(it, nodes.end());
         assignTokenRanges();
         repartitionData();
-        LOG_INFO("Node with ID {} removed from Ring {}", nodeId, ringId);
+        APP_LOG_INFO("Node with ID {} removed from Ring {}", nodeId, ringId);
     } else {
-        LOG_ERROR("Attempted to remove non-existent Node with ID {} from Ring {}", nodeId, ringId);
+        APP_LOG_ERROR("Attempted to remove non-existent Node with ID {} from Ring {}", nodeId, ringId);
     }
 }
 
@@ -205,6 +205,15 @@ auto Ring::reorganizeNodes() -> void {
     }
 }
 
+auto Ring::findNodeIndexById(int nodeId) const -> int {
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        if (nodes[i]->getId() == nodeId) {
+            return static_cast<int>(i);
+        }
+    }
+    return -1;
+}
+
 auto Ring::updateNodeMovement(float dt, Vector2 bounds) -> void {
     for (auto &node : nodes) {
         node->moveFreely(dt, bounds);
@@ -223,7 +232,7 @@ auto Ring::handleNodeDragging(Vector2 mousePos, bool mousePressed, const Camera2
 
             if (distance < 30.0f && !node->getDragging()) {
                 node->setDragging(true);
-                LOG_DEBUG("Started dragging node: {}", node->getName());
+                APP_LOG_DEBUG("Started dragging node: {}", node->getName());
                 break;
             }
         }
@@ -232,7 +241,7 @@ auto Ring::handleNodeDragging(Vector2 mousePos, bool mousePressed, const Camera2
         for (auto &node : nodes) {
             if (node->getDragging()) {
                 node->setDragging(false);
-                LOG_DEBUG("Stopped dragging node: {}", node->getName());
+                APP_LOG_DEBUG("Stopped dragging node: {}", node->getName());
             }
         }
     }
@@ -259,7 +268,7 @@ auto Ring::setAllNodesMobile(bool mobile) -> void {
         reorganizeNodes();
     }
 
-    LOG_INFO("Set all nodes mobile: {}", mobile);
+    APP_LOG_INFO("Set all nodes mobile: {}", mobile);
 }
 
 auto Ring::shouldReorganize() const -> bool {
@@ -312,7 +321,7 @@ auto Ring::reorganizeFromPositions() -> void {
             nodes[i]->setAngle(angle);
         }
 
-        LOG_DEBUG("Reorganized ring from positions");
+        APP_LOG_DEBUG("Reorganized ring from positions");
     } else {
         // Static ring - use standard organization
         reorganizeNodes();
@@ -407,16 +416,60 @@ auto Ring::insertData(std::string key, std::string value) -> void {
     msg->isReplicationMessage = false;
     msg->ttl = static_cast<int>(nodes.size()) * 2;
 
-    LOG_INFO("Client request: Insert '{}' (hash={}°) -> Node '{}'", msg->data->getKey(), hash, startNode->getName());
+    APP_LOG_INFO("Client request: Insert '{}' (hash={}°) -> Node '{}'", msg->data->getKey(), hash, startNode->getName());
 
     // Try to process immediately at start node
     auto [accepted, forwardMsg] = startNode->receiveMessage(std::move(*msg));
 
     if (accepted) {
-        LOG_INFO("Data '{}' stored immediately at Node '{}'", key, startNode->getName());
+        APP_LOG_INFO("Data '{}' stored immediately at Node '{}'", key, startNode->getName());
+        if (visualizer) {
+            visualizer->startDataTransfer(startNode->getPosition(), findDataOwner(hash)->getPosition(), key, false); // Visualize primary data transfer
+        }
     } else {
         // Needs forwarding
         routeMessage(startNode->getId(), std::move(forwardMsg));
+    }
+
+    // Handle replication
+    int currentRF = replicationFactor;
+    if (currentRF > nodes.size()) { // Cap RF at total node count
+        currentRF = static_cast<int>(nodes.size());
+    }
+    
+    // Find the primary owner node's index
+    int primaryOwnerNodeId = findDataOwner(hash)->getId();
+    int primaryOwnerIndex = findNodeIndexById(primaryOwnerNodeId);
+
+    if (primaryOwnerIndex == -1) {
+        APP_LOG_ERROR("Primary owner node not found for replication: {}", primaryOwnerNodeId);
+        return;
+    }
+
+    Node* currentNode = nodes[primaryOwnerIndex].get();
+
+    for (int i = 1; i < currentRF; ++i) { // Start from 1 as primary is already handled
+        size_t nextIdx = (primaryOwnerIndex + i) % nodes.size();
+        Node* replicaNode = nodes[nextIdx].get();
+
+        auto replicaData = std::make_unique<DataItem>(key, value, true); // Mark as replica
+        auto replicaMsg = std::make_unique<Node::RoutingMessage>();
+        replicaMsg->data = std::move(replicaData);
+        replicaMsg->targetHash = hash;
+        replicaMsg->isReplicationMessage = true; // This is a replica message
+        replicaMsg->ttl = static_cast<int>(nodes.size()) * 2; // TTL for replication messages
+
+        // Route the replica message from the primary owner to the replica node
+        // This simulates the primary owner sending the replica to the next node
+        routeMessage(currentNode->getId(), std::move(replicaMsg));
+        
+        APP_LOG_INFO("Replicating '{}' to Node '{}' (hop {})", key, replicaNode->getName(), i);
+        if (visualizer) {
+            visualizer->startDataTransfer(nodes[primaryOwnerIndex]->getPosition(), replicaNode->getPosition(), key, true); // Visualize replica transfer
+        }
+
+        // Update current node for next replica, ensuring local communication
+        currentNode = replicaNode;
     }
 }
 
@@ -438,12 +491,6 @@ auto Ring::routeMessage(int startNodeId, std::unique_ptr<Node::RoutingMessage> m
     pm.endPos = next->getPosition();
     
     messageQueue.push_back(std::move(pm));
-    
-    if (visualizer) {
-         // Visualizer will just read from messageQueue? Or we trigger it? 
-         // Ideally Visualizer should read this state, but for now let's keep using startDataTransfer for "visuals"
-         // wait, messageQueue IS the visual state for routing.
-    }
 }
 
 auto Ring::getNextNode(int currentNodeId) -> Node* {
@@ -482,7 +529,7 @@ auto Ring::processMessageQueue(float dt) -> void {
                 if (accepted) {
                     // Message delivered!
                     // TODO: Trigger Replication here if it was a primary store
-                    LOG_INFO("Message delivered to Node '{}'", targetNode->getName());
+                    APP_LOG_INFO("Message delivered to Node '{}'", targetNode->getName());
                     it = messageQueue.erase(it);
                 } else {
                     // Needs to forward again
@@ -529,15 +576,15 @@ auto Ring::assignTokenRanges() -> void {
             end = 360; // Last node gets remainder
         }
         nodes[i]->setTokenRange(start, end);
-        LOG_DEBUG("Node '{}' owns range [{}°, {}°)", nodes[i]->getName(), start, end);
+        APP_LOG_DEBUG("Node '{}' owns range [{}°, {}°)", nodes[i]->getName(), start, end);
     }
 }
 
 auto Ring::repartitionData() -> void {
-    LOG_INFO("=== Starting data repartitioning ===");
+    APP_LOG_INFO("=== Starting data repartitioning ===");
 
     if (nodes.empty()) {
-        LOG_ERROR("No nodes available for repartitioning");
+        APP_LOG_ERROR("No nodes available for repartitioning");
         return;
     }
 
@@ -545,7 +592,7 @@ auto Ring::repartitionData() -> void {
     std::map<std::string, std::pair<Node *, Vector2>> oldOwners;
     for (auto &node : nodes) {
         Vector2 pos = node->getPosition();
-        LOG_DEBUG("Node '{}' position: ({}, {})", node->getName(), pos.x, pos.y);
+        APP_LOG_DEBUG("Node '{}' position: ({}, {})", node->getName(), pos.x, pos.y);
         for (const auto &data : node->storedData) {
             oldOwners[data->getKey()] = {node.get(), pos};
         }
@@ -563,7 +610,7 @@ auto Ring::repartitionData() -> void {
         }
     }
 
-    LOG_INFO("Collected {} data items for redistribution", allData.size());
+    APP_LOG_INFO("Collected {} data items for redistribution", allData.size());
 
     assignTokenRanges();
 
@@ -582,7 +629,7 @@ auto Ring::repartitionData() -> void {
                 Vector2 newPos = newOwner->getPosition();
 
                 if (oldOwner != newOwner && visualizer) {
-                    visualizer->startDataTransfer(oldPos, newPos, data->getKey());
+                    visualizer->startDataTransfer(oldPos, newPos, data->getKey(), false); // Not a replica message during repartition
                     transferCount++;
                 }
             }
@@ -591,7 +638,7 @@ auto Ring::repartitionData() -> void {
         }
     }
 
-    LOG_INFO("=== Repartitioning complete - {} transfers visualized ===", transferCount);
+    APP_LOG_INFO("=== Repartitioning complete - {} transfers visualized ===", transferCount);
 }
 
 auto Ring::getDataDistribution() -> std::vector<int> {
@@ -603,10 +650,10 @@ auto Ring::getDataDistribution() -> std::vector<int> {
 }
 
 auto Ring::forceRepartitionWithVisualization() -> void {
-    LOG_INFO("=== Forcing visual repartitioning ===");
+    APP_LOG_INFO("=== Forcing visual repartitioning ===");
 
     if (nodes.empty() || !visualizer) {
-        LOG_ERROR("Cannot visualize: no nodes or visualizer");
+        APP_LOG_ERROR("Cannot visualize: no nodes or visualizer");
         return;
     }
 
@@ -622,7 +669,8 @@ auto Ring::forceRepartitionWithVisualization() -> void {
                 visualizer->startDataTransfer(
                     currentNode->getPosition(),
                     correctOwner->getPosition(),
-                    data->getKey()
+                    data->getKey(),
+                    false // Not a replica message
                 );
             }
         }
