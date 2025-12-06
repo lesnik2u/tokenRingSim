@@ -1,0 +1,11 @@
+---
+BasedOnStyle: LLVM
+IndentWidth: 4
+TabWidth: 4
+
+# Recommended: Keeps 'public:' flush with 'class {'
+AccessModifierOffset: -4
+
+# Optional: Standardize max line length
+ColumnLimit: 100
+...
