@@ -582,11 +582,6 @@ auto Ring::repartitionData() -> void {
                 Vector2 newPos = newOwner->getPosition();
 
                 if (oldOwner != newOwner && visualizer) {
-                    LOG_INFO(
-                        "Visualizing transfer: '{}' from {} to {} (positions: ({},{}) -> ({},{}))",
-                        data->getKey(), oldOwner->getName(), newOwner->getName(), oldPos.x,
-                        oldPos.y, newPos.x, newPos.y);
-
                     visualizer->startDataTransfer(oldPos, newPos, data->getKey());
                     transferCount++;
                 }

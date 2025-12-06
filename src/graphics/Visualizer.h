@@ -4,15 +4,6 @@
 #include <raylib.h>
 #include <vector>
 
-struct Particle {
-    Vector2 position;
-    Vector2 velocity;
-    Color color;
-    float lifetime;
-    float maxLifetime;
-    float size;
-};
-
 struct DataTransfer {
     Vector2 fromPos;
     Vector2 toPos;
@@ -27,19 +18,19 @@ private:
     Vector2 lastMousePos{0, 0};
     bool isPanning{false};
 
-    std::vector<Particle> particles;
+    // std::vector<Particle> particles;
     std::vector<Vector2> tokenTrail;
-    float pulseTimer{0.0f};
+    // float pulseTimer{0.0f}; // Removed
 
     auto drawNode(const Node &node, bool hasToken) -> void;
     auto drawToken(Vector2 from, Vector2 to, float progress) -> void;
     auto drawConnections(const Ring &ring) -> void;
-    auto drawParticles(float dt) -> void;
+    // auto drawParticles(float dt) -> void;
     auto drawTokenTrail() -> void;
     auto drawRingGlow(const Ring &ring) -> void;
 
-    auto spawnParticles(Vector2 position, Color color, int count) -> void;
-    auto updateParticles(float dt) -> void;
+    // auto spawnParticles(Vector2 position, Color color, int count) -> void;
+    // auto updateParticles(float dt) -> void;
 
     std::vector<DataTransfer> activeTransfers;
 

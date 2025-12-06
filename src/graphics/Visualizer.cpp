@@ -49,49 +49,7 @@ void Visualizer::beginCamera() { BeginMode2D(camera); }
 
 void Visualizer::endCamera() { EndMode2D(); }
 
-void Visualizer::spawnParticles(Vector2 position, Color color, int count) {
-    for (int i = 0; i < count; ++i) {
-        float angle = (GetRandomValue(0, 360) * PI) / 180.0f;
-        float speed = GetRandomValue(20, 60);
 
-        Particle p;
-        p.position = position;
-        p.velocity = {cos(angle) * speed, sin(angle) * speed};
-        p.color = color;
-        p.lifetime = 0.0f;
-        p.maxLifetime = GetRandomValue(30, 80) / 100.0f;
-        p.size = GetRandomValue(2, 5);
-
-        particles.push_back(p);
-    }
-}
-
-void Visualizer::updateParticles(float dt) {
-    for (auto it = particles.begin(); it != particles.end();) {
-        it->lifetime += dt;
-        it->position.x += it->velocity.x * dt;
-        it->position.y += it->velocity.y * dt;
-        it->velocity.x *= 0.95f;
-        it->velocity.y *= 0.95f;
-
-        if (it->lifetime >= it->maxLifetime) {
-            it = particles.erase(it);
-        } else {
-            ++it;
-        }
-    }
-}
-
-void Visualizer::drawParticles(float dt) {
-    updateParticles(dt);
-
-    for (const auto &p : particles) {
-        float alpha = 1.0f - (p.lifetime / p.maxLifetime);
-        Color col = p.color;
-        col.a = static_cast<unsigned char>(alpha * 255);
-        DrawCircleV(p.position, p.size, col);
-    }
-}
 
 void Visualizer::addTokenTrailPoint(Vector2 point) {
     tokenTrail.push_back(point);
@@ -128,12 +86,12 @@ void Visualizer::drawRingGlow(const Ring &ring) {
 }
 
 void Visualizer::drawRing(const Ring &ring, float dt) {
-    pulseTimer += dt;
+    // pulseTimer += dt; // Removed
 
     drawRingGlow(ring);
     drawConnections(ring);
     // drawTokenTrail();
-    // drawDataTransfers(dt);
+    drawDataTransfers(dt);
 
     const auto &nodes = ring.getNodes();
     const auto *token = ring.getToken();
@@ -165,12 +123,11 @@ void Visualizer::drawRing(const Ring &ring, float dt) {
         // drawToken(from, to, progress);
 
         // Spawn particles occasionally
-        if (GetRandomValue(0, 100) < 30) {
-            spawnParticles(tokenPos, ORANGE, 1);
-        }
+        // if (GetRandomValue(0, 100) < 30) {
+        //     spawnParticles(tokenPos, ORANGE, 1);
+        // }
     }
 
-    drawParticles(dt);
 }
 
 void Visualizer::drawNode(const Node &node, bool hasToken) {
@@ -180,26 +137,21 @@ void Visualizer::drawNode(const Node &node, bool hasToken) {
         drawSelectedNodeHighlight(node);
     }
 
-    // Pulsing animation when has token
-    float pulseScale = 1.0f;
-    if (hasToken) {
-        pulseScale = 1.0f + sin(pulseTimer * 8.0f) * 0.15f;
-    }
-
-    float nodeRadius = 30.0f * pulseScale;
+    float nodeRadius = 30.0f; // Fixed size, no pulsing
 
     // Glow effect
-    if (hasToken) {
-        Color glowColor = GREEN;
-        glowColor.a = 50;
-        DrawCircleV(pos, nodeRadius + 10.0f, glowColor);
-        glowColor.a = 100;
-        DrawCircleV(pos, nodeRadius + 5.0f, glowColor);
-    }
+    // if (hasToken) {
+    //     Color glowColor = GREEN;
+    //     glowColor.a = 50;
+    //     DrawCircleV(pos, nodeRadius + 10.0f, glowColor);
+    //     glowColor.a = 100;
+    //     DrawCircleV(pos, nodeRadius + 5.0f, glowColor);
+    // }
 
-    // Gradient effect (fake with circles)
-    Color nodeColor = hasToken ? GREEN : SKYBLUE;
-    Color innerColor = hasToken ? LIME : WHITE;
+    // Dynamic coloring based on token range
+    float hue = (float)node.getTokenRangeStart(); // Assuming range from 0-360
+    Color nodeColor = ColorFromHSV(hue, 0.8f, 0.9f); // Bright, saturated color
+    Color innerColor = ColorFromHSV(hue, 0.5f, 1.0f); // Lighter inner color
 
     DrawCircleV(pos, nodeRadius, nodeColor);
     DrawCircleV(pos, nodeRadius * 0.6f, innerColor);
@@ -216,7 +168,7 @@ void Visualizer::drawToken(Vector2 from, Vector2 to, float progress) {
     Vector2 pos = {from.x + (to.x - from.x) * progress, from.y + (to.y - from.y) * progress};
 
     // Pulsing token
-    float pulse = 1.0f + sin(pulseTimer * 10.0f) * 0.2f;
+    float pulse = 1.0f; // No pulsing
     float tokenRadius = 15.0f * pulse;
 
     // Glow
@@ -288,7 +240,7 @@ void Visualizer::startDataTransfer(Vector2 from, Vector2 to, std::string key) {
 }
 
 void Visualizer::drawDataTransfers(float dt) {
-    for (auto it = activeTransfers.begin(); it != activeTransfers.end();) {
+    for (auto it = activeTransfers.begin(); it != activeTransfers.end(); ) {
         it->progress += dt * 0.8f;  // Speed of transfer
 
         if (it->progress >= 1.0f) {
@@ -340,9 +292,9 @@ int Visualizer::checkNodeClick(const Ring &ring) {
 
 void Visualizer::drawSelectedNodeHighlight(const Node &node) {
     Vector2 pos = node.getPosition();
-    float highlightRadius = 35.0f + (sin(GetTime() * 5.0f) * 2.0f); // Pulsating effect
-    DrawCircleLines(pos.x, pos.y, highlightRadius, YELLOW);
-    DrawCircleLines(pos.x, pos.y, highlightRadius + 2, YELLOW);
+    float highlightRadius = 35.0f; // Fixed size, no pulsating effect
+    DrawCircleLines(pos.x, pos.y, highlightRadius, ORANGE);
+    DrawCircleLines(pos.x, pos.y, highlightRadius + 2, ORANGE);
 }
 
 

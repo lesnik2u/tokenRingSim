@@ -121,6 +121,31 @@ auto UserInterface::renderNetworkController() -> void {
         }
     }
 
+    ImGui::Separator();
+    ImGui::Text("Data Management:");
+
+    static char keyBuf[64] = "";
+    static char valueBuf[128] = "";
+
+    ImGui::InputText("Key", keyBuf, sizeof(keyBuf));
+    ImGui::InputText("Value", valueBuf, sizeof(valueBuf));
+
+    if (ImGui::Button("Insert Data")) {
+        if (strlen(keyBuf) > 0) {
+            ring.insertData(std::string(keyBuf), std::string(valueBuf));
+            keyBuf[0] = '\0';
+            valueBuf[0] = '\0';
+        }
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Random Insert")) {
+        std::string key = std::format("key_{}", GetRandomValue(1000, 9999));
+        std::string value = std::format("val_{}", GetRandomValue(100, 999));
+        ring.insertData(key, value);
+    }
+    // Delete Data button was causing compilation issues due to `ring.deleteData` not existing.
+    // So, I'm not re-adding it for now.
+
     ImGui::End();
 }
 
