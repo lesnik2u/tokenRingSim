@@ -29,6 +29,7 @@ int main() {
     ring.addNode("Node_B");
     ring.addNode("Node_C");
     ring.addNode("Node_D");
+    ring.setAllNodesMobile(true); // Enable mobility for initial nodes
     ring.spawnToken(); // This must be called after nodes are added.
 
     ring.insertData("user_alice", "data_1");

@@ -142,17 +142,69 @@ auto Ring::removeNode(int nodeId) -> void {
     });
 
     if (it != nodes.end()) {
+        // Clean up message queue - remove any messages involving this node
+        messageQueue.erase(
+            std::remove_if(messageQueue.begin(), messageQueue.end(),
+                [nodeId](const PendingMessage& msg) {
+                    return msg.currentNodeId == nodeId || msg.targetNodeId == nodeId;
+                }),
+            messageQueue.end()
+        );
+        
         // If the removed node was the token holder, move the token to the next node
         if (token && (*it)->getId() == token->getCurrentNodeId()) {
-            // Find the next node in the ring after removal
-            // For simplicity, for now, we'll just invalidate the token.
-            // A more robust solution would reassign it to the *next* logical node.
-            token.reset(); // Invalidate the token
+            // Find the current index of the node to be removed
+            size_t currentIdx = std::distance(nodes.begin(), it);
+
+            if (nodes.size() > 1) { // If there are other nodes remaining
+                size_t nextIdx = (currentIdx + 1) % nodes.size();
+                // Ensure the token moves to a valid node after 'it' is removed.
+                // If 'it' is the last element and nextIdx becomes 0, it means the token moves to the new first node.
+                // If 'it' is not the last element, nextIdx will be 'currentIdx + 1'
+                // The actual node at nextIdx will shift left by 1 when 'it' is erased if nextIdx > currentIdx.
+                // So, if nextIdx is calculated *before* erase, and it refers to an element *after* 'it',
+                // we just need to ensure the token goes to the correct node after the erase.
+                // For simplicity and correctness with std::vector erase, we will move the token to the node
+                // that will *become* the next node after 'it' is erased.
+                
+                // If the node being removed is the last node, the token should go to the (new) first node.
+                // Otherwise, it should go to the node that was immediately after the removed node.
+
+                Node* nextNodeAfterRemoval;
+                if (currentIdx == nodes.size() - 1) { // If removing the last node
+                    nextNodeAfterRemoval = nodes[0].get(); // The first node becomes the "next"
+                } else {
+                    nextNodeAfterRemoval = nodes[currentIdx + 1].get(); // The node after the removed one
+                }
+                
+                token->moveToNextNode(nextNodeAfterRemoval->getId());
+                nextNodeAfterRemoval->hasToken = true;
+                (*it)->hasToken = false; // The node being removed no longer has the token
+                APP_LOG_INFO("Token transferred from node {} to node {}", nodeId, nextNodeAfterRemoval->getId());
+
+            } else { // Only one node left, and it's being removed
+                token.reset(); // Invalidate the token
+                APP_LOG_INFO("Token invalidated as the last node {} is removed", nodeId);
+            }
         }
         
-        nodes.erase(it, nodes.end());
+        // Repartition data away from the dying node *before* it is removed
+        // This ensures data is moved from the node before its unique_ptr is destructed.
+        assignTokenRanges(); // Update ranges temporarily with current node count
+        repartitionData(); // Redistribute data based on these ranges
+
+        nodes.erase(it); // Erase the node here
+
+        // After removal, re-organize and re-assign token ranges for the new set of nodes
+        reorganizeNodes();
         assignTokenRanges();
-        repartitionData();
+
+        // If the token was removed and not reassigned (e.g., last node removed), spawn a new one if possible
+        if (!token && !nodes.empty()) {
+            spawnToken();
+            APP_LOG_INFO("New token spawned after node removal.");
+        }
+        
         APP_LOG_INFO("Node with ID {} removed from Ring {}", nodeId, ringId);
     } else {
         APP_LOG_ERROR("Attempted to remove non-existent Node with ID {} from Ring {}", nodeId, ringId);
@@ -238,11 +290,17 @@ auto Ring::handleNodeDragging(Vector2 mousePos, bool mousePressed, const Camera2
         }
     } else {
         // Release all nodes
+        bool wasDragging = false;
         for (auto &node : nodes) {
             if (node->getDragging()) {
                 node->setDragging(false);
                 APP_LOG_DEBUG("Stopped dragging node: {}", node->getName());
+                wasDragging = true;
             }
+        }
+        if (wasDragging && !nodes.empty()) {
+            // Always reorganize after dragging to connect to closest nodes
+            reorganizeFromPositions();
         }
     }
 
@@ -285,47 +343,35 @@ auto Ring::reorganizeFromPositions() -> void {
     if (nodes.empty())
         return;
 
-    // Check if nodes should be in ring formation (not mobile)
-    bool allStatic = true;
+    // Calculate center from current node positions
+    Vector2 centerPos = {0, 0};
     for (const auto &node : nodes) {
-        if (node->getMobile()) {
-            allStatic = false;
-            break;
-        }
+        centerPos.x += node->getPosition().x;
+        centerPos.y += node->getPosition().y;
+    }
+    centerPos.x /= nodes.size();
+    centerPos.y /= nodes.size();
+
+    // Sort nodes by angle from center (clockwise order)
+    std::sort(nodes.begin(), nodes.end(),
+              [centerPos](const std::unique_ptr<Node> &a, const std::unique_ptr<Node> &b) {
+                  Vector2 aPos = a->getPosition();
+                  Vector2 bPos = b->getPosition();
+                  float angleA = atan2(aPos.y - centerPos.y, aPos.x - centerPos.x);
+                  float angleB = atan2(bPos.y - centerPos.y, bPos.x - centerPos.x);
+                  return angleA < angleB;
+              });
+
+    // Update angles based on current positions
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        Vector2 pos = nodes[i]->getPosition();
+        float angle = atan2(pos.y - centerPos.y, pos.x - centerPos.x);
+        nodes[i]->setAngle(angle);
     }
 
-    if (!allStatic) {
-        // Nodes are mobile, calculate center and organize in ring
-        Vector2 centerPos = {0, 0};
-        for (const auto &node : nodes) {
-            centerPos.x += node->getPosition().x;
-            centerPos.y += node->getPosition().y;
-        }
-        centerPos.x /= nodes.size();
-        centerPos.y /= nodes.size();
-
-        // Sort nodes by angle from center
-        std::sort(nodes.begin(), nodes.end(),
-                  [centerPos](const std::unique_ptr<Node> &a, const std::unique_ptr<Node> &b) {
-                      Vector2 aPos = a->getPosition();
-                      Vector2 bPos = b->getPosition();
-                      float angleA = atan2(aPos.y - centerPos.y, aPos.x - centerPos.x);
-                      float angleB = atan2(bPos.y - centerPos.y, bPos.x - centerPos.x);
-                      return angleA < angleB;
-                  });
-
-        // Update angles based on current positions
-        for (size_t i = 0; i < nodes.size(); ++i) {
-            Vector2 pos = nodes[i]->getPosition();
-            float angle = atan2(pos.y - centerPos.y, pos.x - centerPos.x);
-            nodes[i]->setAngle(angle);
-        }
-
-        APP_LOG_DEBUG("Reorganized ring from positions");
-    } else {
-        // Static ring - use standard organization
-        reorganizeNodes();
-    }
+    APP_LOG_INFO("Reorganized ring: nodes sorted by position to connect closest neighbors");
+    assignTokenRanges(); // Update token ranges after re-sorting
+    repartitionData();   // Re-distribute data based on new ranges
 }
 
 auto Ring::calculateRingCenter() -> Vector2 {
@@ -403,6 +449,10 @@ auto Ring::applyRingFormationForces() -> void {
 auto Ring::insertData(std::string key, std::string value) -> void {
     if (nodes.empty()) return;
 
+    // Store copies for later use (key and value will be moved)
+    std::string keyCopy = key;
+    std::string valueCopy = value;
+
     // Start from a random node (simulating a client request hitting a random server)
     int startNodeIdx = GetRandomValue(0, static_cast<int>(nodes.size()) - 1);
     Node* startNode = nodes[startNodeIdx].get();
@@ -410,24 +460,22 @@ auto Ring::insertData(std::string key, std::string value) -> void {
     auto data = std::make_unique<DataItem>(std::move(key), std::move(value));
     int hash = data->getHash();
 
+    APP_LOG_INFO("Client request: Insert '{}' (hash={}°) -> Node '{}'", keyCopy, hash, startNode->getName());
+
     auto msg = std::make_unique<Node::RoutingMessage>();
     msg->data = std::move(data);
     msg->targetHash = hash;
     msg->isReplicationMessage = false;
     msg->ttl = static_cast<int>(nodes.size()) * 2;
 
-    APP_LOG_INFO("Client request: Insert '{}' (hash={}°) -> Node '{}'", msg->data->getKey(), hash, startNode->getName());
-
     // Try to process immediately at start node
     auto [accepted, forwardMsg] = startNode->receiveMessage(std::move(*msg));
 
     if (accepted) {
-        APP_LOG_INFO("Data '{}' stored immediately at Node '{}'", key, startNode->getName());
-        if (visualizer) {
-            visualizer->startDataTransfer(startNode->getPosition(), findDataOwner(hash)->getPosition(), key, false); // Visualize primary data transfer
-        }
+        APP_LOG_INFO("Data '{}' stored immediately at Node '{}'", keyCopy, startNode->getName());
+        // No visualization here - data was stored immediately at start node
     } else {
-        // Needs forwarding
+        // Needs forwarding - visualization will happen in processMessageQueue
         routeMessage(startNode->getId(), std::move(forwardMsg));
     }
 
@@ -438,7 +486,13 @@ auto Ring::insertData(std::string key, std::string value) -> void {
     }
     
     // Find the primary owner node's index
-    int primaryOwnerNodeId = findDataOwner(hash)->getId();
+    Node* primaryOwner = findDataOwner(hash);
+    if (!primaryOwner) {
+        APP_LOG_ERROR("Primary owner node not found for hash: {}", hash);
+        return;
+    }
+    
+    int primaryOwnerNodeId = primaryOwner->getId();
     int primaryOwnerIndex = findNodeIndexById(primaryOwnerNodeId);
 
     if (primaryOwnerIndex == -1) {
@@ -452,7 +506,7 @@ auto Ring::insertData(std::string key, std::string value) -> void {
         size_t nextIdx = (primaryOwnerIndex + i) % nodes.size();
         Node* replicaNode = nodes[nextIdx].get();
 
-        auto replicaData = std::make_unique<DataItem>(key, value, true); // Mark as replica
+        auto replicaData = std::make_unique<DataItem>(keyCopy, valueCopy, true); // Mark as replica
         auto replicaMsg = std::make_unique<Node::RoutingMessage>();
         replicaMsg->data = std::move(replicaData);
         replicaMsg->targetHash = hash;
@@ -463,10 +517,8 @@ auto Ring::insertData(std::string key, std::string value) -> void {
         // This simulates the primary owner sending the replica to the next node
         routeMessage(currentNode->getId(), std::move(replicaMsg));
         
-        APP_LOG_INFO("Replicating '{}' to Node '{}' (hop {})", key, replicaNode->getName(), i);
-        if (visualizer) {
-            visualizer->startDataTransfer(nodes[primaryOwnerIndex]->getPosition(), replicaNode->getPosition(), key, true); // Visualize replica transfer
-        }
+        APP_LOG_INFO("Replicating '{}' to Node '{}' (hop {})", keyCopy, replicaNode->getName(), i);
+        // Visualization will happen hop-by-hop in processMessageQueue
 
         // Update current node for next replica, ensuring local communication
         currentNode = replicaNode;
@@ -515,32 +567,36 @@ auto Ring::processMessageQueue(float dt) -> void {
             if(n->getId() == it->targetNodeId) end = n.get();
         }
 
-        if(start && end) {
-            it->startPos = start->getPosition();
-            it->endPos = end->getPosition();
+        // Check if nodes still exist (might have been removed)
+        if (!start || !end) {
+            APP_LOG_ERROR("Message queue contains reference to removed node");
+            it = messageQueue.erase(it);
+            continue;
         }
 
+        it->startPos = start->getPosition();
+        it->endPos = end->getPosition();
+
         if (it->progress >= 1.0f) {
-            // Arrived at next node
+            // Arrived at next node - visualize this hop
+            if (visualizer) {
+                bool isReplica = it->content->isReplicationMessage;
+                visualizer->startDataTransfer(it->startPos, it->endPos, it->content->data->getKey(), isReplica);
+            }
+            
             Node* targetNode = end;
-            if (targetNode) {
-                auto [accepted, forwardMsg] = targetNode->receiveMessage(std::move(*it->content));
-                
-                if (accepted) {
-                    // Message delivered!
-                    // TODO: Trigger Replication here if it was a primary store
-                    APP_LOG_INFO("Message delivered to Node '{}'", targetNode->getName());
-                    it = messageQueue.erase(it);
-                } else {
-                    // Needs to forward again
-                    auto msg = std::move(forwardMsg);
-                    int currentId = targetNode->getId();
-                    it = messageQueue.erase(it); // remove current hop
-                    routeMessage(currentId, std::move(msg)); // schedule next hop
-                    continue; // loop again
-                }
+            auto [accepted, forwardMsg] = targetNode->receiveMessage(std::move(*it->content));
+            
+            if (accepted) {
+                // Message delivered!
+                APP_LOG_INFO("Message delivered to Node '{}'", targetNode->getName());
+                it = messageQueue.erase(it);
             } else {
-                 it = messageQueue.erase(it);
+                // Needs to forward again
+                auto msg = std::move(forwardMsg);
+                int currentId = targetNode->getId();
+                it = messageQueue.erase(it); // remove current hop
+                routeMessage(currentId, std::move(msg)); // schedule next hop
             }
         } else {
             ++it;
@@ -620,22 +676,25 @@ auto Ring::repartitionData() -> void {
         int hash = data->getHash();
         Node *newOwner = findDataOwner(hash);
 
-        if (newOwner) {
-            auto oldOwnerIt = oldOwners.find(data->getKey());
-
-            if (oldOwnerIt != oldOwners.end()) {
-                Node *oldOwner = oldOwnerIt->second.first;
-                Vector2 oldPos = oldOwnerIt->second.second;
-                Vector2 newPos = newOwner->getPosition();
-
-                if (oldOwner != newOwner && visualizer) {
-                    visualizer->startDataTransfer(oldPos, newPos, data->getKey(), false); // Not a replica message during repartition
-                    transferCount++;
-                }
-            }
-
-            newOwner->addData(std::move(data));
+        if (!newOwner) {
+            APP_LOG_ERROR("Could not find owner for data '{}' with hash {}", data->getKey(), hash);
+            continue;
         }
+
+        auto oldOwnerIt = oldOwners.find(data->getKey());
+
+        if (oldOwnerIt != oldOwners.end()) {
+            Node *oldOwner = oldOwnerIt->second.first;
+            Vector2 oldPos = oldOwnerIt->second.second;
+            Vector2 newPos = newOwner->getPosition();
+
+            if (oldOwner != newOwner && visualizer) {
+                visualizer->startDataTransfer(oldPos, newPos, data->getKey(), false);
+                transferCount++;
+            }
+        }
+
+        newOwner->addData(std::move(data));
     }
 
     APP_LOG_INFO("=== Repartitioning complete - {} transfers visualized ===", transferCount);

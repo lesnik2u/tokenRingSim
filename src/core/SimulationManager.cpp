@@ -33,30 +33,32 @@ auto SimulationManager::update(float dt) -> void {
 }
 
 auto SimulationManager::clearSelection() -> void {
-    for (auto* node : selectedNodes) {
-        if (node) node->setSelected(false);
-    }
     selectedNodes.clear();
 }
 
-auto SimulationManager::selectNode(Node* node, bool multiSelect) -> void {
+auto SimulationManager::selectNode(int nodeId, bool multiSelect) -> void {
+    Node* node = findNodeById(nodeId);
     if (!node) return;
 
     if (!multiSelect) {
-        clearSelection();
+        // Deselect all previously selected nodes
+        for (int previouslySelectedId : selectedNodes) {
+            Node* prevNode = findNodeById(previouslySelectedId);
+            if (prevNode) {
+                prevNode->setSelected(false);
+            }
+        }
+        clearSelection(); // Clear the IDs as well
     }
 
-    if (node->getSelected()) { // Node is currently selected
-        if (multiSelect) {
-            node->setSelected(false);
-            // Remove node from selectedNodes vector
-            auto& nodes = selectedNodes;
-            nodes.erase(std::remove(nodes.begin(), nodes.end(), node), nodes.end());
-        }
-        // If not multiSelect and already selected, do nothing (keep it selected)
+    auto it = std::find(selectedNodes.begin(), selectedNodes.end(), nodeId);
+
+    if (it != selectedNodes.end()) { // Node is currently selected
+        node->setSelected(false);
+        selectedNodes.erase(it);
     } else { // Node is not currently selected
         node->setSelected(true);
-        selectedNodes.push_back(node);
+        selectedNodes.push_back(nodeId);
     }
 }
 
@@ -88,7 +90,7 @@ auto SimulationManager::handleInput(const Camera2D& camera) -> void {
         if (clickedNodeId != -1) {
             Node* clickedNode = findNodeById(clickedNodeId);
             if (clickedNode) {
-                selectNode(clickedNode, shiftDown);
+                selectNode(clickedNodeId, shiftDown);
                 APP_LOG_INFO("Selected Node: {}", clickedNode->getName());
             }
         } else if (!shiftDown) {
@@ -107,5 +109,16 @@ auto SimulationManager::findNodeById(int nodeId) const -> Node* {
         }
     }
     return nullptr;
+}
+
+auto SimulationManager::onNodeRemoved(int nodeId) -> void {
+    auto it = std::remove(selectedNodes.begin(), selectedNodes.end(), nodeId);
+    selectedNodes.erase(it, selectedNodes.end());
+
+    // Ensure the node's selected state is false, in case it was selected
+    Node* removedNode = findNodeById(nodeId);
+    if (removedNode) { // It might have been already deallocated if not selected
+        removedNode->setSelected(false);
+    }
 }
 

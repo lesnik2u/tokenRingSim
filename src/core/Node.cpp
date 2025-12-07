@@ -28,15 +28,15 @@ auto Node::moveFreely(float dt, Vector2 bounds) -> void {
     position.x += velocity.x * dt;
     position.y += velocity.y * dt;
 
-    // Bounce off boundaries
-    if (position.x < 50 || position.x > bounds.x - 50) {
-        velocity.x = -velocity.x;
-        position.x = std::clamp(position.x, 50.0f, bounds.x - 50.0f);
-    }
-    if (position.y < 50 || position.y > bounds.y - 50) {
-        velocity.y = -velocity.y;
-        position.y = std::clamp(position.y, 50.0f, bounds.y - 50.0f);
-    }
+    // No boundary checks, nodes can roam freely with panning/zooming
+    // if (position.x < 50 || position.x > bounds.x - 50) {
+    //     velocity.x = -velocity.x;
+    //     position.x = std::clamp(position.x, 50.0f, bounds.x - 50.0f);
+    // }
+    // if (position.y < 50 || position.y > bounds.y - 50) {
+    //     velocity.y = -velocity.y;
+    //     position.y = std::clamp(position.y, 50.0f, bounds.y - 50.0f);
+    // }
 }
 
 auto Node::setAngle(float newAngle) -> void {
@@ -98,6 +98,11 @@ auto Node::receiveMessage(RoutingMessage message) -> std::pair<bool, std::unique
     }
 
     message.ttl--;
+
+    // Check if data is valid
+    if (!message.data) {
+        return {true, nullptr}; // Invalid message, drop it
+    }
 
     // Case 1: Replication command (forced storage)
     if (message.isReplicationMessage) {

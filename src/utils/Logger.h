@@ -1,12 +1,41 @@
 #pragma once
 #include <iostream>
+#include <fstream> // Added for file logging
 #include <format>
 #include <string_view>
 #include <chrono>
 
+// Define a constant for the log file name
+const std::string LOG_FILE_NAME = "simulation.log";
+
 class Logger {
 private:
-    Logger() = default;
+    std::ofstream logFile; // Member for file logging
+
+    Logger() {
+        logFile.open(LOG_FILE_NAME, std::ios::out | std::ios::app); // Open log file in append mode
+        if (!logFile.is_open()) {
+            std::cerr << "Error: Could not open log file: " << LOG_FILE_NAME << std::endl;
+        } else {
+            // Write session separator and startup message
+            logFile << "\n========================================\n";
+            logFile << "New session started at " << getTimestamp() << "\n";
+            logFile << "========================================\n";
+            logFile.flush();
+            std::cout << "Logging to file: " << LOG_FILE_NAME << std::endl;
+        }
+    }
+
+    // Destructor to close the log file
+    ~Logger() {
+        if (logFile.is_open()) {
+            logFile << "\n========================================\n";
+            logFile << "Session ended at " << getTimestamp() << "\n";
+            logFile << "========================================\n\n";
+            logFile.flush();
+            logFile.close();
+        }
+    }
 
     auto getTimestamp() const -> std::string {
         auto now = std::chrono::system_clock::now();
@@ -30,20 +59,32 @@ public:
 
     template<typename... Args>
     auto info(std::format_string<Args...> fmt, Args&&... args) -> void {
-        std::cout << std::format("[{}] INFO: ", getTimestamp())
-                  << std::format(fmt, std::forward<Args>(args)...) << "\n";
+        std::string message = std::format("[{}] INFO: ", getTimestamp()) + std::format(fmt, std::forward<Args>(args)...);
+        std::cout << message << "\n";
+        if (logFile.is_open()) {
+            logFile << message << "\n";
+            logFile.flush(); // Ensure message is written immediately
+        }
     }
 
     template<typename... Args>
     auto debug(std::format_string<Args...> fmt, Args&&... args) -> void {
-        std::cout << std::format("[{}] DEBUG: ", getTimestamp())
-                  << std::format(fmt, std::forward<Args>(args)...) << "\n";
+        std::string message = std::format("[{}] DEBUG: ", getTimestamp()) + std::format(fmt, std::forward<Args>(args)...);
+        std::cout << message << "\n";
+        if (logFile.is_open()) {
+            logFile << message << "\n";
+            logFile.flush();
+        }
     }
 
     template<typename... Args>
     auto error(std::format_string<Args...> fmt, Args&&... args) -> void {
-        std::cerr << std::format("[{}] ERROR: ", getTimestamp())
-                  << std::format(fmt, std::forward<Args>(args)...) << "\n";
+        std::string message = std::format("[{}] ERROR: ", getTimestamp()) + std::format(fmt, std::forward<Args>(args)...);
+        std::cerr << message << "\n"; // Errors still go to cerr
+        if (logFile.is_open()) {
+            logFile << message << "\n";
+            logFile.flush();
+        }
     }
 };
 

@@ -20,23 +20,21 @@ public:
     
     // Selection
     auto clearSelection() -> void;
-    auto selectNode(Node* node, bool multiSelect) -> void;
-    auto getSelectedNodes() const -> const std::vector<Node*>& { return selectedNodes; }
+    auto selectNode(int nodeId, bool multiSelect) -> void;
+    auto getSelectedNodes() const -> const std::vector<int>& { return selectedNodes; }
+    auto onNodeRemoved(int nodeId) -> void;
 
     // Getters
     auto getRings() -> std::vector<std::unique_ptr<Ring>>& { return rings; }
     auto getRings() const -> const std::vector<std::unique_ptr<Ring>>& { return rings; }
 
-private:
-    std::vector<std::unique_ptr<Ring>> rings;
-    std::vector<Node*> selectedNodes;
-    Visualizer* visualizer{nullptr};
-    int nextRingId{0}; // Counter for unique ring IDs
-
-    // Input state
-    Vector2 lastMousePos{0,0};
-
     // Helper to find node by ID across all rings
     auto findNodeById(int nodeId) const -> Node*;
+
+private:
+    std::vector<std::unique_ptr<Ring>> rings;
+    std::vector<int> selectedNodes;
+    Visualizer* visualizer{nullptr};
+    int nextRingId{0}; // Counter for unique ring IDs
 
 };
