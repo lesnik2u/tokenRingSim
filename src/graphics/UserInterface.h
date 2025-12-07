@@ -5,7 +5,7 @@
 class UserInterface {
 public:
     UserInterface(SimulationManager& sim, Visualizer& visualizer);
-    
+
     auto render() -> void;
     auto isMouseCaptured() const -> bool;
 
@@ -21,7 +21,7 @@ private:
     float messageSpeed{0.5f}; // UI state for speed
     bool mobilityEnabled{true};
     bool ringFormation{true};
-    
+
     int selectedRingIndex{-1}; // Index of the currently selected ring in SimulationManager
     int lastSelectedRingIndex{-1}; // To detect selection changes
 

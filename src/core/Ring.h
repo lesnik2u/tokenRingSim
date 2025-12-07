@@ -1,17 +1,19 @@
 #pragma once
 #include "core/Node.h"
 #include "core/Token.h"
+#include "core/SpatialGrid.h" // Added include
 #include <memory>
 #include <raylib.h>
 #include <vector>
 #include "graphics/Visualizer.h"
-#include "utils/Logger.h" // Added include
+#include "utils/Logger.h"
 
 class Visualizer;
+class SimulationManager; 
 
 /**
  * @brief Manages the Distributed Hash Table (DHT) ring.
- * 
+ *
  * Implements a Consistent Hashing strategy where:
  * - The ring represents a 0-360 degree key space.
  * - Nodes are assigned a position on the ring (angle).
@@ -35,6 +37,8 @@ private:
 
     Visualizer* visualizer{nullptr};
     int ringId{-1}; // Unique ID for this ring, set by SimulationManager
+    SimulationManager* simulationManager_ = nullptr; // Raw pointer to SimulationManager
+    SpatialGrid spatialGrid{100.0f}; // Spatial grid for optimized neighbor queries
 
 public:
     Ring(Vector2 center, float radius);
@@ -47,6 +51,7 @@ public:
     ~Ring() = default;
 
     auto setVisualizer(Visualizer* vis) -> void { visualizer = vis; }
+    auto setSimulationManager(SimulationManager* manager) -> void { simulationManager_ = manager; }
 
     // Operator overloading
     auto operator+=(std::string nodeName) -> Ring &;
@@ -112,7 +117,7 @@ private:
         Vector2 endPos;
     };
     std::vector<PendingMessage> messageQueue;
-    
+
     auto getNextNode(int currentNodeId) -> Node*;
 
     int selectedNodeId = -1; // -1 indicates no node is selected
@@ -124,6 +129,4 @@ public:
 
     auto setRingId(int id) -> void { ringId = id; }
     auto getRingId() const -> int { return ringId; }
-
-
 };

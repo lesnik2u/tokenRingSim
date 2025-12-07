@@ -10,6 +10,7 @@ auto SimulationManager::addRing(Vector2 center, float radius) -> Ring& {
     auto ring = std::make_unique<Ring>(center, radius);
     ring->setRingId(nextRingId++); // Assign unique ID using setter
     if (visualizer) ring->setVisualizer(visualizer);
+    ring->setSimulationManager(this); // Set the SimulationManager for the ring
     rings.push_back(std::move(ring));
     return *rings.back();
 }
@@ -33,6 +34,13 @@ auto SimulationManager::update(float dt) -> void {
 }
 
 auto SimulationManager::clearSelection() -> void {
+    // Deselect all currently selected nodes visually
+    for (int nodeId : selectedNodes) {
+        Node* node = findNodeById(nodeId);
+        if (node) {
+            node->setSelected(false);
+        }
+    }
     selectedNodes.clear();
 }
 

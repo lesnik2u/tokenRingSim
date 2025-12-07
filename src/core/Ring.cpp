@@ -1,5 +1,6 @@
 #include "core/Ring.h"
 #include "utils/Logger.h"
+#include "SimulationManager.h" // Added include for SimulationManager
 #include "graphics/Visualizer.h"
 #include <algorithm>
 #include <map>
@@ -130,18 +131,25 @@ auto Ring::removeLastNode() -> void {
     repartitionData();
 
     // Then remove the node
+    // Notify SimulationManager that node is being removed
+    if (simulationManager_) {
+        simulationManager_->onNodeRemoved(nodes.back()->getId());
+    }
     nodes.pop_back();
     reorganizeNodes();
     assignTokenRanges();
 }
 
 auto Ring::removeNode(int nodeId) -> void {
-    // Find the node to remove
-    auto it = std::remove_if(nodes.begin(), nodes.end(), [nodeId](const std::unique_ptr<Node>& n){
+    auto it = std::find_if(nodes.begin(), nodes.end(), [nodeId](const std::unique_ptr<Node>& n){
         return n->getId() == nodeId;
     });
 
     if (it != nodes.end()) {
+        // Store the node being removed temporarily to access its properties safely
+        // after `find_if` but before `erase` invalidates iterators.
+        Node* nodeToRemove = it->get();
+
         // Clean up message queue - remove any messages involving this node
         messageQueue.erase(
             std::remove_if(messageQueue.begin(), messageQueue.end(),
@@ -152,7 +160,7 @@ auto Ring::removeNode(int nodeId) -> void {
         );
         
         // If the removed node was the token holder, move the token to the next node
-        if (token && (*it)->getId() == token->getCurrentNodeId()) {
+        if (token && nodeToRemove->getId() == token->getCurrentNodeId()) {
             // Find the current index of the node to be removed
             size_t currentIdx = std::distance(nodes.begin(), it);
 
@@ -164,24 +172,39 @@ auto Ring::removeNode(int nodeId) -> void {
                 // The actual node at nextIdx will shift left by 1 when 'it' is erased if nextIdx > currentIdx.
                 // So, if nextIdx is calculated *before* erase, and it refers to an element *after* 'it',
                 // we just need to ensure the token goes to the correct node after the erase.
-                // For simplicity and correctness with std::vector erase, we will move the token to the node
-                // that will *become* the next node after 'it' is erased.
                 
-                // If the node being removed is the last node, the token should go to the (new) first node.
-                // Otherwise, it should go to the node that was immediately after the removed node.
-
-                Node* nextNodeAfterRemoval;
-                if (currentIdx == nodes.size() - 1) { // If removing the last node
-                    nextNodeAfterRemoval = nodes[0].get(); // The first node becomes the "next"
-                } else {
-                    nextNodeAfterRemoval = nodes[currentIdx + 1].get(); // The node after the removed one
+                // Search for the next active node by iterating from the element *after* the one to be removed, wrapping around if necessary
+                auto search_token_it = std::next(it);
+                if (search_token_it == nodes.end()) { // Wrap around
+                    search_token_it = nodes.begin();
                 }
-                
-                token->moveToNextNode(nextNodeAfterRemoval->getId());
-                nextNodeAfterRemoval->hasToken = true;
-                (*it)->hasToken = false; // The node being removed no longer has the token
-                APP_LOG_INFO("Token transferred from node {} to node {}", nodeId, nextNodeAfterRemoval->getId());
 
+                Node* nextActiveNode = nullptr;
+                bool foundNextActive = false;
+                auto start_search_token_it = search_token_it; // To detect if we've looped entirely
+                do {
+                    if (search_token_it->get()->isActive() && search_token_it->get()->getId() != nodeToRemove->getId()) {
+                        nextActiveNode = search_token_it->get();
+                        foundNextActive = true;
+                        break;
+                    }
+                    std::advance(search_token_it, 1);
+                    if (search_token_it == nodes.end()) {
+                        search_token_it = nodes.begin();
+                    }
+                } while (search_token_it != start_search_token_it);
+
+
+                if (foundNextActive && nextActiveNode) { // Ensure we actually found a different active node
+                    token->moveToNextNode(nextActiveNode->getId());
+                    nextActiveNode->hasToken = true;
+                    nodeToRemove->hasToken = false; // The node being removed no longer has the token
+                    APP_LOG_INFO("Token transferred from node {} to node {}", nodeId, nextActiveNode->getId());
+                } else {
+                    // No other active nodes, destroy the token
+                    token.reset();
+                    APP_LOG_INFO("Token invalidated as no other active nodes found after node {}", nodeId);
+                }
             } else { // Only one node left, and it's being removed
                 token.reset(); // Invalidate the token
                 APP_LOG_INFO("Token invalidated as the last node {} is removed", nodeId);
@@ -193,6 +216,10 @@ auto Ring::removeNode(int nodeId) -> void {
         assignTokenRanges(); // Update ranges temporarily with current node count
         repartitionData(); // Redistribute data based on these ranges
 
+        // Notify SimulationManager that node is being removed
+        if (simulationManager_) {
+            simulationManager_->onNodeRemoved(nodeId);
+        }
         nodes.erase(it); // Erase the node here
 
         // After removal, re-organize and re-assign token ranges for the new set of nodes
@@ -220,6 +247,12 @@ auto Ring::spawnToken() -> void {
 }
 
 auto Ring::update(float dt) -> void {
+    // Update Spatial Grid
+    spatialGrid.clear();
+    for (const auto& node : nodes) {
+        spatialGrid.insert(node.get());
+    }
+
     if (!token || nodes.empty())
         return;
 
@@ -393,56 +426,113 @@ auto Ring::applyRingFormationForces() -> void {
     if (nodes.empty() || !ringFormationEnabled)
         return;
 
-    Vector2 ringCenter = calculateRingCenter();
-    float targetRadius = radius;
+    // Flocking Parameters
+    float separationRadius = 40.0f;
+    float alignmentRadius = 80.0f;
+    float cohesionRadius = 80.0f;
+    
+    float separationWeight = 2.5f;
+    float alignmentWeight = 1.0f;
+    float cohesionWeight = 1.0f;
+    float centerAttractWeight = 0.5f;
+    float tangentFlowWeight = 0.8f;
+
+    Vector2 ringCenter = calculateRingCenter(); // Use dynamic center of mass or fixed 'center'
 
     for (auto &node : nodes) {
-        if (!node->getMobile())
-            continue;
+        if (!node->getMobile()) continue;
 
-        Vector2 nodePos = node->getPosition();
+        Vector2 pos = node->getPosition();
+        Vector2 vel = node->getVelocity();
+        
+        Vector2 separation = {0, 0};
+        Vector2 alignment = {0, 0};
+        Vector2 cohesion = {0, 0};
+        int separationCount = 0;
+        int alignmentCount = 0;
+        int cohesionCount = 0;
 
-        // Force toward ring center
-        Vector2 toCenter = {ringCenter.x - nodePos.x, ringCenter.y - nodePos.y};
-        float distToCenter = sqrt(toCenter.x * toCenter.x + toCenter.y * toCenter.y);
+        // Query neighbors from grid
+        auto neighbors = spatialGrid.query(pos);
 
-        if (distToCenter > 0.1f) {
-            toCenter.x /= distToCenter;
-            toCenter.y /= distToCenter;
-
-            float radiusError = distToCenter - targetRadius;
-            float springStrength = 30.0f;
-
-            Vector2 springForce = {toCenter.x * radiusError * springStrength,
-                                   toCenter.y * radiusError * springStrength};
-
-            node->applyForce(springForce);
-        }
-
-        // Repulsion from other nodes
-        for (const auto &other : nodes) {
-            if (node.get() == other.get())
-                continue;
+        for (Node* other : neighbors) {
+            if (node.get() == other) continue;
 
             Vector2 otherPos = other->getPosition();
-            Vector2 diff = {nodePos.x - otherPos.x, nodePos.y - otherPos.y};
-            float dist = sqrt(diff.x * diff.x + diff.y * diff.y);
+            float d = Vector2Distance(pos, otherPos);
 
-            float minDist = 80.0f;
-            if (dist < minDist && dist > 0.1f) {
-                diff.x /= dist;
-                diff.y /= dist;
+            // Separation
+            if (d > 0 && d < separationRadius) {
+                Vector2 diff = Vector2Subtract(pos, otherPos);
+                diff = Vector2Normalize(diff);
+                diff = Vector2Scale(diff, 1.0f / d); // Weight by inverse distance
+                separation = Vector2Add(separation, diff);
+                separationCount++;
+            }
 
-                float repulsionStrength = 300.0f / (dist * dist);
-                Vector2 repulsion = {diff.x * repulsionStrength, diff.y * repulsionStrength};
+            // Alignment
+            if (d > 0 && d < alignmentRadius) {
+                alignment = Vector2Add(alignment, other->getVelocity());
+                alignmentCount++;
+            }
 
-                node->applyForce(repulsion);
+            // Cohesion
+            if (d > 0 && d < cohesionRadius) {
+                cohesion = Vector2Add(cohesion, otherPos);
+                cohesionCount++;
             }
         }
 
-        // Friction
-        Vector2 vel = node->getVelocity();
-        node->setVelocity(Vector2{vel.x * 0.98f, vel.y * 0.98f});
+        // Apply Flocking Forces
+        if (separationCount > 0) {
+            separation = Vector2Scale(separation, 1.0f / separationCount);
+            separation = Vector2Normalize(separation);
+            separation = Vector2Scale(separation, 100.0f); // Max speed
+            Vector2 steer = Vector2Subtract(separation, vel);
+            // Limit steer? node->applyForce handles it implicitly via physics update usually
+            node->applyForce(Vector2Scale(steer, separationWeight));
+        }
+
+        if (alignmentCount > 0) {
+            alignment = Vector2Scale(alignment, 1.0f / alignmentCount);
+            alignment = Vector2Normalize(alignment);
+            alignment = Vector2Scale(alignment, 100.0f);
+            Vector2 steer = Vector2Subtract(alignment, vel);
+            node->applyForce(Vector2Scale(steer, alignmentWeight));
+        }
+
+        if (cohesionCount > 0) {
+            cohesion = Vector2Scale(cohesion, 1.0f / cohesionCount); // Center of mass
+            Vector2 desired = Vector2Subtract(cohesion, pos);
+            desired = Vector2Normalize(desired);
+            desired = Vector2Scale(desired, 100.0f);
+            Vector2 steer = Vector2Subtract(desired, vel);
+            node->applyForce(Vector2Scale(steer, cohesionWeight));
+        }
+
+        // --- Emergent Ring Formation Forces ---
+
+        // 1. Center Attraction (keeps them in the play area)
+        // Attract to the Ring's defined center, not just local center of mass
+        Vector2 toCenter = Vector2Subtract(this->center, pos); // Use this->center for stability
+        float distToCenter = Vector2Length(toCenter);
+        if (distToCenter > radius * 0.5f) { // Allow some freedom in the middle
+             toCenter = Vector2Normalize(toCenter);
+             node->applyForce(Vector2Scale(toCenter, centerAttractWeight * 10.0f));
+        }
+
+        // 2. Tangential Flow (encourages circular motion / ring formation)
+        // Vector pointing from center to node
+        Vector2 radial = Vector2Subtract(pos, this->center);
+        // Tangent is perpendicular to radial (-y, x)
+        Vector2 tangent = {-radial.y, radial.x};
+        tangent = Vector2Normalize(tangent);
+        
+        // Scale tangent force by distance from center (faster on outside?)
+        node->applyForce(Vector2Scale(tangent, tangentFlowWeight * 20.0f));
+        
+        // Friction / Damping
+        node->setVelocity(Vector2Scale(node->getVelocity(), 0.99f));
     }
 }
 

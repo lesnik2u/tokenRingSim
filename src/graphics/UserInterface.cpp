@@ -243,7 +243,7 @@ auto UserInterface::renderNodeInspector() -> void {
                     } else {
                         int removedNodeId = node->getId(); // Store ID before node is destroyed
                         ownerRing->removeNode(removedNodeId);
-                        sim.onNodeRemoved(removedNodeId); // Inform SimulationManager
+                        // sim.onNodeRemoved(removedNodeId); // Removed, as Ring now notifies SimulationManager
                         nodeRemoved = true;
                         open = false; // Close window
                     }
