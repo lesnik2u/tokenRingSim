@@ -153,7 +153,7 @@ auto Ring::removeNode(int nodeId) -> void {
                     token->moveToNextNode(nextActiveNode->getId());
                     nextActiveNode->hasToken = true;
                     nodeToRemove->hasToken = false;
-                    APP_LOG_INFO("Token transferred from node {} to node {}", nodeId, nextActiveNode->getId());
+                    // APP_LOG_INFO("Token transferred..."); // Spam
                 } else {
                     token.reset();
                     APP_LOG_INFO("Token invalidated as no other active nodes found after node {}", nodeId);
@@ -243,6 +243,7 @@ auto Ring::update(float dt) -> void {
     }
     
     processMessageQueue(dt);
+    resolveCollisions();
 }
 
 auto Ring::reorganizeNodes() -> void {
@@ -304,26 +305,41 @@ auto Ring::resolveCollisions() -> void {
     float radius = 30.0f; // Visual radius
     float diameter = radius * 2.0f;
     
+    std::vector<Node*> neighbors; // Optimization: reused buffer
+    neighbors.reserve(50);
+
     // 4 Iterations for stiff collisions
     for (int iter = 0; iter < 4; ++iter) {
         for (auto& node : nodes) {
             if (!node->getMobile()) continue;
-            Vector2 pos = node->getPosition();
             
-            auto neighbors = spatialGrid.query(pos, diameter);
+            Vector2 pos = node->getPosition();
+            spatialGrid.query(pos, diameter, neighbors);
             
             for (Node* other : neighbors) {
                 if (node.get() == other) continue;
-                Vector2 otherPos = other->getPosition();
+                
+                Vector2 otherPos = other->getPosition(); 
                 float d = Vector2Distance(pos, otherPos);
                 
-                if (d < diameter && d > 0.001f) {
+                if (d < diameter) {
+                    Vector2 dir;
+                    if (d < 0.001f) {
+                        d = 0.001f;
+                        dir = { (float)GetRandomValue(-10, 10), (float)GetRandomValue(-10, 10) };
+                        if (dir.x == 0 && dir.y == 0) dir.x = 1.0f;
+                        dir = Vector2Normalize(dir);
+                    } else {
+                        dir = Vector2Subtract(pos, otherPos);
+                        dir = Vector2Normalize(dir);
+                    }
+
                     float overlap = diameter - d;
-                    Vector2 dir = Vector2Subtract(pos, otherPos);
-                    dir = Vector2Normalize(dir);
                     
                     Vector2 push = Vector2Scale(dir, overlap * 0.5f);
                     node->setPosition(Vector2Add(pos, push));
+                    other->setPosition(Vector2Subtract(otherPos, push));
+                    pos = node->getPosition();
                 }
             }
         }
@@ -333,12 +349,14 @@ auto Ring::resolveCollisions() -> void {
 auto Ring::applyRingFormationForces() -> void {
     if (nodes.empty() || !ringFormationEnabled) return;
 
-    // 1. Build Fast Lookup
     std::unordered_map<int, Node*> nodeMap;
     for (const auto& n : nodes) nodeMap[n->getId()] = n.get();
 
     float breakDist = physics.searchRadius * 1.5f;
     float connectDist = physics.searchRadius;
+    
+    std::vector<Node*> candidates; // Optimization: reused buffer
+    candidates.reserve(100);
 
     // --- Pass 1: Maintenance & Basic Formation ---
     for (auto &node : nodes) {
@@ -361,8 +379,11 @@ auto Ring::applyRingFormationForces() -> void {
 
         // B. Formation
         if (node->getNeighbors().size() < 2) {
-            auto candidates = spatialGrid.query(pos, connectDist);
+            spatialGrid.query(pos, connectDist, candidates);
+            
             std::vector<std::pair<float, Node*>> sorted;
+            sorted.reserve(candidates.size());
+            
             for (Node* other : candidates) {
                 if (other == node.get()) continue;
                 
@@ -391,9 +412,9 @@ auto Ring::applyRingFormationForces() -> void {
         }
     }
 
-    // --- Pass 2: Identify Clusters & Ends ---
+    // --- Pass 2: Identify Clusters ---
     std::unordered_map<int, int> clusterSizes;
-    std::unordered_map<int, std::vector<Node*>> clusterEnds; // For loop closing
+    std::unordered_map<int, std::vector<Node*>> clusterEnds; 
     int nextClusterId = 0;
     for (auto& node : nodes) node->setClusterId(-1); 
 
@@ -442,7 +463,6 @@ auto Ring::applyRingFormationForces() -> void {
         int cid = node->getClusterId();
         int csize = (cid != -1) ? clusterSizes[cid] : 1;
         
-        // Split if too big
         if (csize > maxClusterSize) {
             if (node->getNeighbors().size() >= 2) {
                 if (GetRandomValue(0, 100) < 5) { 
@@ -453,10 +473,9 @@ auto Ring::applyRingFormationForces() -> void {
             }
         }
         
-        // Insert if room available
         if (csize < maxClusterSize && node->getNeighbors().size() == 2) {
             Vector2 pos = node->getPosition();
-            auto candidates = spatialGrid.query(pos, physics.idealDist * 0.6f);
+            spatialGrid.query(pos, physics.idealDist * 0.6f, candidates);
             for (Node* intruder : candidates) {
                 if (intruder == node.get()) continue;
                 if (intruder->getNeighbors().size() < 2) {
@@ -479,7 +498,7 @@ auto Ring::applyRingFormationForces() -> void {
         int myCluster = node->getClusterId();
         int myClusterSize = (myCluster != -1) ? clusterSizes[myCluster] : 1;
 
-        // End-to-End Attraction (Close the Loop)
+        // End-to-End Attraction
         if (bondedIds.size() == 1 && myCluster != -1) {
             const auto& ends = clusterEnds[myCluster];
             for (Node* endNode : ends) {
@@ -488,7 +507,6 @@ auto Ring::applyRingFormationForces() -> void {
                 float dist = Vector2Length(dir);
                 if (dist > 0.1f) {
                     dir = Vector2Normalize(dir);
-                    // Magnetic pull to close the ring
                     float pull = physics.chainAttractStrength * 5.0f; 
                     force = Vector2Add(force, Vector2Scale(dir, pull));
                 }
@@ -524,8 +542,8 @@ auto Ring::applyRingFormationForces() -> void {
         }
 
         // Non-Bonded Repulsion
-        auto nearby = spatialGrid.query(pos, physics.searchRadius);
-        for (Node* other : nearby) {
+        spatialGrid.query(pos, physics.searchRadius, candidates);
+        for (Node* other : candidates) {
             if (other == node.get()) continue;
             bool isBonded = false;
             for(int id : bondedIds) if(id == other->getId()) isBonded = true;
@@ -583,7 +601,7 @@ auto Ring::processMessageQueue(float dt) -> void {
             Node* targetNode = end;
             auto [accepted, forwardMsg] = targetNode->receiveMessage(std::move(*it->content));
             if (accepted) {
-                APP_LOG_INFO("Message delivered to Node '{}'", targetNode->getName());
+                // APP_LOG_INFO("Message delivered..."); // Reduced spam
                 it = messageQueue.erase(it);
             } else {
                 auto msg = std::move(forwardMsg);

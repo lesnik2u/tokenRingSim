@@ -136,7 +136,7 @@ void Visualizer::drawNode(const Node &node, bool hasToken) {
     
     // 2. Core Geometry (Rotating Hexagon)
     float rotation = animationTime * 40.0f + node.getId() * 10.0f;
-    if (hasToken) rotation *= 3.0f; // Spin faster with token
+    // Rotation speed constant regardless of token
     
     // Inner fill
     DrawPoly(pos, 6, radius, rotation, Fade(baseColor, 0.7f));
@@ -165,13 +165,10 @@ void Visualizer::drawNode(const Node &node, bool hasToken) {
     EndBlendMode();
 
     // 4. Text Labels (Normal Blend)
-    // Only show text on hover or selection to reduce clutter
-    // Or show small ID
-    if (node.getSelected() || dataCount > 0) {
-        std::string label = std::string(node.getName());
-        int textWidth = MeasureText(label.c_str(), 10);
-        DrawText(label.c_str(), pos.x - textWidth/2, pos.y + radius + 5, 10, WHITE);
-    }
+    // Always show text per user request
+    std::string label = std::string(node.getName());
+    int textWidth = MeasureText(label.c_str(), 10);
+    DrawText(label.c_str(), pos.x - textWidth/2, pos.y + radius + 5, 10, WHITE);
     
     if (node.getSelected()) {
         drawSelectedNodeHighlight(node);
