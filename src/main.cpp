@@ -51,7 +51,7 @@ int main() {
         sim.update(dt); // Update simulation logic
 
         BeginDrawing();
-        ClearBackground(RAYWHITE);
+        ClearBackground(Color{10, 10, 12, 255}); // Dark background
 
         visualizer.beginCamera();
         for (const auto& r : sim.getRings()) {

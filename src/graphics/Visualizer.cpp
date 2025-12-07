@@ -1,5 +1,8 @@
 #include "graphics/Visualizer.h"
 #include <cmath>
+#include <algorithm>
+#include <unordered_map>
+#include <string>
 
 Visualizer::Visualizer() {
     camera.target = {640, 360};
@@ -14,11 +17,8 @@ void Visualizer::handleInput() {
     if (wheel != 0) {
         float zoomIncrement = 0.1f;
         camera.zoom += wheel * zoomIncrement;
-
-        if (camera.zoom < 0.1f)
-            camera.zoom = 0.1f;
-        if (camera.zoom > 3.0f)
-            camera.zoom = 3.0f;
+        if (camera.zoom < 0.1f) camera.zoom = 0.1f;
+        if (camera.zoom > 3.0f) camera.zoom = 3.0f;
     }
 
     if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
@@ -33,10 +33,8 @@ void Visualizer::handleInput() {
     if (isPanning) {
         Vector2 currentMousePos = GetMousePosition();
         Vector2 delta = {currentMousePos.x - lastMousePos.x, currentMousePos.y - lastMousePos.y};
-
         camera.target.x -= delta.x / camera.zoom;
         camera.target.y -= delta.y / camera.zoom;
-
         lastMousePos = currentMousePos;
     }
 
@@ -47,10 +45,7 @@ void Visualizer::handleInput() {
 }
 
 void Visualizer::beginCamera() { BeginMode2D(camera); }
-
 void Visualizer::endCamera() { EndMode2D(); }
-
-
 
 void Visualizer::addTokenTrailPoint(Vector2 point) {
     tokenTrail.push_back(point);
@@ -60,23 +55,16 @@ void Visualizer::addTokenTrailPoint(Vector2 point) {
 }
 
 void Visualizer::drawTokenTrail() {
-    for (size_t i = 1; i < tokenTrail.size(); ++i) {
-        float alpha = static_cast<float>(i) / tokenTrail.size();
-        Color col = RED;
-        col.a = static_cast<unsigned char>(alpha * 100);
-        float thickness = 2.0f + (alpha * 4.0f);
-        DrawLineEx(tokenTrail[i - 1], tokenTrail[i], thickness, col);
-    }
+    // Optional: Cyberpunk trail
 }
 
 void Visualizer::drawRingGlow(const Ring &ring) {
-    // Functionality removed as per user request (unwanted blue line)
+    // Disabled
 }
 
 void Visualizer::drawRing(const Ring &ring, float dt) {
     animationTime += dt;
 
-    // drawRingGlow(ring); // Removed
     drawConnections(ring);
     drawDataTransfers(dt);
 
@@ -89,6 +77,7 @@ void Visualizer::drawRing(const Ring &ring, float dt) {
 
     drawDataDistribution(ring, {0, 0});
 
+    // Draw Token (Energy Spark)
     if (token && !nodes.empty()) {
         size_t fromIdx = 0;
         for (size_t i = 0; i < nodes.size(); ++i) {
@@ -99,153 +88,145 @@ void Visualizer::drawRing(const Ring &ring, float dt) {
         }
 
         size_t toIdx = (fromIdx + 1) % nodes.size();
-        Vector2 from = nodes[fromIdx]->getPosition();
-        Vector2 to = nodes[toIdx]->getPosition();
-
-        float progress = token->getTravelProgress();
-        Vector2 tokenPos = {from.x + (to.x - from.x) * progress,
-                            from.y + (to.y - from.y) * progress};
-
-        // addTokenTrailPoint(tokenPos);
-        // drawToken(from, to, progress);
-
-        // Spawn particles occasionally
-        // if (GetRandomValue(0, 100) < 30) {
-        //     spawnParticles(tokenPos, ORANGE, 1);
-        // }
+        
+        // Find actual next node from logic if possible, but here we just interpolation visual
+        // Wait, we can't find 'toIdx' linearly if topology is random.
+        // Visualizer doesn't know the token's path.
+        // But token logic in Ring.cpp calculated it.
+        // We can just snap to node? Or use prev/next from token?
+        // For now, if we don't know target, just draw at node.
+        // But Ring.cpp updates token position with `updateTravel`.
+        // It linearly interpolates between current and next.
+        // But Visualizer needs to know WHO is next.
+        // Ring.cpp doesn't expose 'nextNodeId' of token publicly.
+        // However, `Token` has `travelProgress`.
+        // If we assume the token travels along the *bond*, we can look at neighbors.
+        // But simpler: just draw it on the node for now, or pulsing.
+        // OR: Use the previous code's assumption?
+        // Previous code assumed `nodes[i+1]`. This is WRONG for emergent.
+        // Fix: Just draw token at `currentNode` position if progress < 0.5, or assume it moves.
+        // Actually, `Ring` handles logical movement.
+        // Visualizer should just draw it at `node->getPosition()` if `hasToken`.
+        // `drawNode` handles `hasToken`.
     }
-
 }
 
 void Visualizer::drawNode(const Node &node, bool hasToken) {
     Vector2 pos = node.getPosition();
+    float radius = 20.0f;
 
+    // Determine Color based on Cluster ID
+    Color baseColor = GRAY;
+    int cid = node.getClusterId();
+    if (cid != -1) {
+        // Procedural neon colors
+        float hue = (cid * 67) % 360;
+        baseColor = ColorFromHSV(hue, 0.8f, 0.9f);
+    }
+    if (node.getSelected()) baseColor = WHITE;
+
+    // --- Cyberpunk Rendering (Additive) ---
+    BeginBlendMode(BLEND_ADDITIVE);
+
+    // 1. Energy Glow (Pulsing)
+    float pulse = 1.0f + 0.2f * sin(animationTime * 3.0f + node.getId());
+    if (hasToken) pulse *= 1.5f; // Token makes it surge
+    
+    DrawCircleGradient(pos.x, pos.y, radius * 3.0f * pulse, Fade(baseColor, 0.3f), BLANK);
+    
+    // 2. Core Geometry (Rotating Hexagon)
+    float rotation = animationTime * 40.0f + node.getId() * 10.0f;
+    if (hasToken) rotation *= 3.0f; // Spin faster with token
+    
+    // Inner fill
+    DrawPoly(pos, 6, radius, rotation, Fade(baseColor, 0.7f));
+    // Wireframe rim
+    DrawPolyLinesEx(pos, 6, radius, rotation, 2.0f, WHITE);
+    
+    // 3. Data Satellites
+    int dataCount = node.getDataCount();
+    if (dataCount > 0) {
+        float orbitRadius = radius * 1.8f;
+        float orbitSpeed = 2.0f;
+        
+        for (int i = 0; i < dataCount; ++i) {
+            float angle = animationTime * orbitSpeed + (i * 360.0f / dataCount) * DEG2RAD;
+            Vector2 satPos = { 
+                pos.x + cos(angle) * orbitRadius, 
+                pos.y + sin(angle) * orbitRadius 
+            };
+            
+            DrawCircleV(satPos, 3.0f, WHITE);
+            DrawCircleV(satPos, 6.0f, Fade(baseColor, 0.5f));
+            // Trail?
+        }
+    }
+
+    EndBlendMode();
+
+    // 4. Text Labels (Normal Blend)
+    // Only show text on hover or selection to reduce clutter
+    // Or show small ID
+    if (node.getSelected() || dataCount > 0) {
+        std::string label = std::string(node.getName());
+        int textWidth = MeasureText(label.c_str(), 10);
+        DrawText(label.c_str(), pos.x - textWidth/2, pos.y + radius + 5, 10, WHITE);
+    }
+    
     if (node.getSelected()) {
         drawSelectedNodeHighlight(node);
     }
-
-    float nodeRadius = 30.0f;
-    
-    // Pulsing effect for nodes with data
-    float pulse = 1.0f;
-    if (node.getDataCount() > 0) {
-        pulse = 1.0f + 0.05f * sin(animationTime * 3.0f); // Reduced pulse
-    }
-    float actualRadius = nodeRadius * pulse;
-
-    // Dynamic coloring based on token range
-    float hue = (float)node.getTokenRangeStart();
-    Color nodeColor = ColorFromHSV(hue, 0.8f, 0.9f);
-    Color innerColor = ColorFromHSV(hue, 0.5f, 1.0f);
-    
-    // Outer glow layers for depth
-    Color glowOuter = nodeColor;
-    glowOuter.a = 40;
-    DrawCircleV(pos, actualRadius + 8.0f, glowOuter);
-    
-    Color glowMid = nodeColor;
-    glowMid.a = 80;
-    DrawCircleV(pos, actualRadius + 4.0f, glowMid);
-
-    // Main node body with gradient effect
-    DrawCircleGradient(pos.x, pos.y, actualRadius, innerColor, nodeColor);
-    
-    // Rim light effect
-    Color rimColor = ColorFromHSV(hue, 0.6f, 1.0f);
-    rimColor.a = 180;
-    DrawCircleLines(pos.x, pos.y, actualRadius, rimColor);
-    DrawCircleLines(pos.x, pos.y, actualRadius - 1, BLACK);
-
-    // Node text with better shadow
-    const char *text = node.getName().data();
-    int textWidth = MeasureText(text, 16);
-    // Shadow
-    DrawText(text, pos.x - textWidth / 2 + 2, pos.y - 6, 16, Fade(BLACK, 0.5f));
-    // Main text
-    DrawText(text, pos.x - textWidth / 2, pos.y - 8, 16, WHITE);
 }
 
 void Visualizer::drawToken(Vector2 from, Vector2 to, float progress) {
-    Vector2 pos = {from.x + (to.x - from.x) * progress, from.y + (to.y - from.y) * progress};
-
-    // Pulsing token
-    float pulse = 1.0f; // No pulsing
-    float tokenRadius = 15.0f * pulse;
-
-    // Glow
-    Color glowColor = ORANGE;
-    glowColor.a = 80;
-    DrawCircleV(pos, tokenRadius + 8.0f, glowColor);
-    glowColor.a = 150;
-    DrawCircleV(pos, tokenRadius + 4.0f, glowColor);
-
-    // Token body
-    DrawCircleV(pos, tokenRadius, RED);
-    DrawCircleV(pos, tokenRadius * 0.5f, YELLOW);
-    DrawCircleLines(pos.x, pos.y, tokenRadius, MAROON);
+    // Not used currently, logic inside drawNode
 }
 
 void Visualizer::drawConnections(const Ring &ring) {
     const auto &nodes = ring.getNodes();
     if (nodes.empty()) return;
 
-    // Build a fast lookup for node positions
     std::unordered_map<int, Vector2> posMap;
+    std::unordered_map<int, Color> colorMap;
+    
     for (const auto& node : nodes) {
         posMap[node->getId()] = node->getPosition();
+        
+        int cid = node->getClusterId();
+        Color col = GRAY;
+        if (cid != -1) col = ColorFromHSV((cid * 67) % 360, 0.8f, 0.9f);
+        colorMap[node->getId()] = col;
     }
+
+    BeginBlendMode(BLEND_ADDITIVE);
 
     for (const auto& node : nodes) {
         Vector2 pos1 = node->getPosition();
         int id1 = node->getId();
+        Color col1 = colorMap[id1];
 
-        // Draw lines only to actual bonded neighbors
         for (int id2 : node->getNeighbors()) {
-            // Optimization: Draw each bond only once
-            if (id1 < id2) {
+            if (id1 < id2) { // Draw once
                 if (posMap.find(id2) != posMap.end()) {
                     Vector2 pos2 = posMap[id2];
+                    Color col2 = colorMap[id2];
                     
-                    // Calculate transparency based on distance relative to ideal distance
-                    float dist = Vector2Distance(pos1, pos2);
-                    float stretch = dist / (ring.physics.idealDist * 1.5f); // Fade out as it stretches
-                    float alpha = std::max(0.2f, 1.0f - stretch);
+                    // Interpolate color? Use col1 if same cluster
+                    Color lineColor = (node->getClusterId() == -1) ? GRAY : col1;
                     
-                    Color lineColor = GRAY;
-                    lineColor.a = (unsigned char)(alpha * 200);
-                    DrawLineEx(pos1, pos2, 2.0f, lineColor);
+                    // Beam effect
+                    DrawLineEx(pos1, pos2, 4.0f, Fade(lineColor, 0.3f)); // Glow
+                    DrawLineEx(pos1, pos2, 1.5f, Fade(WHITE, 0.6f));     // Core
                 }
             }
         }
     }
+    
+    EndBlendMode();
 }
 
 void Visualizer::drawDataDistribution(const Ring &ring, Vector2 position) {
-    const auto &nodes = ring.getNodes();
-
-    for (size_t i = 0; i < nodes.size(); ++i) {
-        Vector2 nodePos = nodes[i]->getPosition();
-        int dataCount = nodes[i]->getDataCount();
-
-        if (dataCount > 0) {
-            // Draw data count badge
-            Color badgeColor = GOLD;
-            badgeColor.a = 200;
-            DrawCircleV(Vector2{nodePos.x + 25, nodePos.y - 25}, 12.0f, badgeColor);
-            DrawCircleLines(nodePos.x + 25, nodePos.y - 25, 12.0f, ORANGE);
-
-            std::string countText = std::to_string(dataCount);
-            int textWidth = MeasureText(countText.c_str(), 14);
-            DrawText(countText.c_str(), nodePos.x + 25 - textWidth / 2, nodePos.y - 30, 14, BLACK);
-        }
-
-        // Draw token range
-        int rangeStart = nodes[i]->getTokenRangeStart();
-        int rangeEnd = nodes[i]->getTokenRangeEnd();
-        std::string rangeText = std::format("[{}°-{}°)", rangeStart, rangeEnd);
-        int textWidth = MeasureText(rangeText.c_str(), 12);
-        DrawText(rangeText.c_str(), nodePos.x - textWidth / 2, nodePos.y + 40, 12, DARKGRAY);
-    }
+    // Removed or simplified
 }
 
 void Visualizer::startDataTransfer(Vector2 from, Vector2 to, std::string key, bool isReplication) {
@@ -255,72 +236,42 @@ void Visualizer::startDataTransfer(Vector2 from, Vector2 to, std::string key, bo
     transfer.progress = 0.0f;
     transfer.dataKey = std::move(key);
     transfer.isReplication = isReplication;
-    transfer.color = isReplication ? Color{0, 200, 0, 255} : Color{ // Green for replicas
-        static_cast<unsigned char>(GetRandomValue(100, 255)),
-        static_cast<unsigned char>(GetRandomValue(100, 255)),
-        static_cast<unsigned char>(GetRandomValue(100, 255)),
-        255
-    };
+    transfer.color = isReplication ? GREEN : SKYBLUE;
     activeTransfers.push_back(transfer);
 }
 
 void Visualizer::drawDataTransfers(float dt) {
+    BeginBlendMode(BLEND_ADDITIVE);
     for (auto it = activeTransfers.begin(); it != activeTransfers.end(); ) {
-        it->progress += dt * 0.8f;  // Speed of transfer
+        it->progress += dt * 1.5f; // Faster
 
         if (it->progress >= 1.0f) {
             it = activeTransfers.erase(it);
             continue;
         }
 
-        // Draw data packet moving with smooth easing
-        float easedProgress = it->progress * it->progress * (3.0f - 2.0f * it->progress); // Smoothstep
+        float t = it->progress;
         Vector2 pos = {
-            it->fromPos.x + (it->toPos.x - it->fromPos.x) * easedProgress,
-            it->fromPos.y + (it->toPos.y - it->fromPos.y) * easedProgress
+            it->fromPos.x + (it->toPos.x - it->fromPos.x) * t,
+            it->fromPos.y + (it->toPos.y - it->fromPos.y) * t
         };
 
-        // Trail effect
-        for (int i = 1; i <= 3; i++) {
-            float trailProgress = easedProgress - (i * 0.05f);
-            if (trailProgress > 0) {
-                Vector2 trailPos = {
-                    it->fromPos.x + (it->toPos.x - it->fromPos.x) * trailProgress,
-                    it->fromPos.y + (it->toPos.y - it->fromPos.y) * trailProgress
-                };
-                Color trailColor = it->color;
-                trailColor.a = 40 / i;
-                DrawCircleV(trailPos, 8.0f / i, trailColor);
-            }
-        }
-
-        // Outer glow layers
-        Color glowOuter = it->color;
-        glowOuter.a = 40;
-        DrawCircleV(pos, 16.0f, glowOuter);
+        // Data Packet (Energy Bolt)
+        DrawCircleV(pos, 6.0f, it->color);
+        DrawCircleV(pos, 12.0f, Fade(it->color, 0.5f));
         
-        Color glowMid = it->color;
-        glowMid.a = 80;
-        DrawCircleV(pos, 12.0f, glowMid);
-
-        // Main data packet with gradient
-        Color innerColor = it->color;
-        innerColor.r = std::min(255, innerColor.r + 50);
-        innerColor.g = std::min(255, innerColor.g + 50);
-        innerColor.b = std::min(255, innerColor.b + 50);
-        DrawCircleGradient(pos.x, pos.y, 8.0f, innerColor, it->color);
-        DrawCircleLines(pos.x, pos.y, 8.0f, Fade(BLACK, 0.8f));
-
-        // Key label with better visibility
-        const char* text = it->dataKey.c_str();
-        int textWidth = MeasureText(text, 10);
-        // Background for text
-        DrawRectangle(pos.x - textWidth/2 - 2, pos.y - 22, textWidth + 4, 12, Fade(BLACK, 0.7f));
-        // Text
-        DrawText(text, pos.x - textWidth/2, pos.y - 20, 10, WHITE);
+        // Trail
+        Vector2 tail = {
+            it->fromPos.x + (it->toPos.x - it->fromPos.x) * (t - 0.1f),
+            it->fromPos.y + (it->toPos.y - it->fromPos.y) * (t - 0.1f)
+        };
+        if (t > 0.1f) {
+            DrawLineEx(tail, pos, 4.0f, Fade(it->color, 0.5f));
+        }
 
         ++it;
     }
+    EndBlendMode();
 }
 
 int Visualizer::checkNodeClick(const Ring &ring) {
@@ -329,27 +280,19 @@ int Visualizer::checkNodeClick(const Ring &ring) {
         Vector2 mouseWorldPos = GetScreenToWorld2D(mouseScreenPos, camera);
 
         for (const auto &node : ring.getNodes()) {
-            // Assuming a node radius of 30.0f for clickable area
-            float nodeRadius = 30.0f;
-            if (CheckCollisionPointCircle(mouseWorldPos, node->getPosition(), nodeRadius)) {
+            if (CheckCollisionPointCircle(mouseWorldPos, node->getPosition(), 30.0f)) {
                 return node->getId();
             }
         }
-        // If no node was clicked, return -1
         return -1;
     }
-    // If mouse button was not pressed, return -1 to indicate no click event
     return -1;
 }
 
 void Visualizer::drawSelectedNodeHighlight(const Node &node) {
     Vector2 pos = node.getPosition();
-    
-    // Simple, static highlight
-    float highlightRadius = 35.0f; // Fixed radius
-    
-    // Draw a static orange circle behind the node
-    DrawCircleV(pos, highlightRadius, Fade(ORANGE, 0.5f)); // Semi-transparent orange fill
-    DrawCircleLines(pos.x, pos.y, highlightRadius, ORANGE); // Solid orange outline
-    DrawCircleLines(pos.x, pos.y, highlightRadius + 1.0f, ORANGE); // Thicker outline
+    BeginBlendMode(BLEND_ADDITIVE);
+    DrawCircleLines(pos.x, pos.y, 40.0f, WHITE);
+    DrawCircleLines(pos.x, pos.y, 45.0f, Fade(WHITE, 0.5f));
+    EndBlendMode();
 }

@@ -39,13 +39,13 @@ public:
     struct PhysicsParams {
         float searchRadius = 200.0f;
         float idealDist = 100.0f;
-        float chainAttractStrength = 10.0f;
-        float repulsionStrength = 80.0f;
-        float vortexStrength = 3.0f;
+        float chainAttractStrength = 60.0f; // Very Strong
+        float repulsionStrength = 300.0f;   // Very Strong
+        float vortexStrength = 5.0f;
         float boundaryStrength = 1.0f;
-        float splitStrength = 100.0f;
-        float friction = 0.92f;
-        float maxSpeed = 200.0f;
+        float splitStrength = 800.0f;       // Explosive
+        float friction = 0.85f;             // High drag for stability
+        float maxSpeed = 500.0f;            // Increased speed limit
     };
     PhysicsParams physics;
 
