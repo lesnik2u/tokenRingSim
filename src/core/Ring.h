@@ -1,7 +1,7 @@
 #pragma once
 #include "core/Node.h"
 #include "core/Token.h"
-#include "core/SpatialGrid.h" // Added include
+#include "core/SpatialGrid.h"
 #include <memory>
 #include <raylib.h>
 #include <vector>
@@ -9,17 +9,10 @@
 #include "utils/Logger.h"
 
 class Visualizer;
-class SimulationManager; 
+class SimulationManager;
 
 /**
  * @brief Manages the Distributed Hash Table (DHT) ring.
- *
- * Implements a Consistent Hashing strategy where:
- * - The ring represents a 0-360 degree key space.
- * - Nodes are assigned a position on the ring (angle).
- * - Data items are hashed to an angle and stored on the first node
- *   encountered moving clockwise (or in the node's assigned range).
- * - Supports dynamic node addition/removal with data repartitioning.
  */
 class Ring {
 private:
@@ -41,6 +34,21 @@ private:
     SpatialGrid spatialGrid{100.0f}; // Spatial grid for optimized neighbor queries
 
 public:
+    // Emergent Simulation Parameters
+    int maxClusterSize{20};
+    struct PhysicsParams {
+        float searchRadius = 200.0f;
+        float idealDist = 100.0f;
+        float chainAttractStrength = 10.0f;
+        float repulsionStrength = 80.0f;
+        float vortexStrength = 3.0f;
+        float boundaryStrength = 1.0f;
+        float splitStrength = 100.0f;
+        float friction = 0.92f;
+        float maxSpeed = 200.0f;
+    };
+    PhysicsParams physics;
+
     Ring(Vector2 center, float radius);
 
     // Rule of 5
@@ -79,6 +87,7 @@ public:
     auto reorganizeFromPositions() -> void;
 
     auto applyRingFormationForces() -> void;
+    auto resolveCollisions() -> void; // Hard collision resolution
     auto calculateRingCenter() -> Vector2;
 
     auto setRingFormation(bool enabled) -> void { ringFormationEnabled = enabled; }
@@ -129,4 +138,7 @@ public:
 
     auto setRingId(int id) -> void { ringId = id; }
     auto getRingId() const -> int { return ringId; }
+    
+    auto setMaxClusterSize(int size) -> void { maxClusterSize = size; }
+    auto getMaxClusterSize() const -> int { return maxClusterSize; }
 };

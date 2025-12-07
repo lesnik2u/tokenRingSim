@@ -5,6 +5,7 @@ Token::Token(int id)
     : Entity(id, "Token"), currentNodeId(0) {
 }
 auto Token::moveToNextNode(int nextNodeId) -> void {
+    previousNodeId = currentNodeId;
     currentNodeId = nextNodeId;
     travelProgress = 0.0f;
 }

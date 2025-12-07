@@ -59,9 +59,9 @@ auto Node::applyForce(Vector2 force) -> void {
 
     // Max speed cap
     float speed = sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
-    if (speed > 150.0f) {  // Reduced max speed
-        velocity.x = (velocity.x / speed) * 150.0f;
-        velocity.y = (velocity.y / speed) * 150.0f;
+    if (speed > 1000.0f) {  // Increased max speed
+        velocity.x = (velocity.x / speed) * 1000.0f;
+        velocity.y = (velocity.y / speed) * 1000.0f;
     }
 }
 auto Node::resetForces() -> void {

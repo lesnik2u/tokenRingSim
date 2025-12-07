@@ -31,10 +31,14 @@ public:
     // Helper to find node by ID across all rings
     auto findNodeById(int nodeId) const -> Node*;
 
+    auto setPainting(bool enabled) -> void { isPainting = enabled; }
+    auto getPainting() const -> bool { return isPainting; }
+
 private:
     std::vector<std::unique_ptr<Ring>> rings;
     std::vector<int> selectedNodes;
     Visualizer* visualizer{nullptr};
     int nextRingId{0}; // Counter for unique ring IDs
+    bool isPainting{false}; // Painting mode flag
 
 };

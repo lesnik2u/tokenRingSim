@@ -21,15 +21,16 @@ public:
         grid[key].push_back(node);
     }
 
-    // Query nodes within a 3x3 block of cells around the position
-    // This is a rough approximation; for strict circle checks, filter results.
-    std::vector<Node*> query(Vector2 position) {
+    // Query nodes within the grid cells overlapping the given radius
+    std::vector<Node*> query(Vector2 position, float radius) {
         std::vector<Node*> results;
-        int cx = static_cast<int>(std::floor(position.x / cellSize));
-        int cy = static_cast<int>(std::floor(position.y / cellSize));
+        int minX = static_cast<int>(std::floor((position.x - radius) / cellSize));
+        int maxX = static_cast<int>(std::floor((position.x + radius) / cellSize));
+        int minY = static_cast<int>(std::floor((position.y - radius) / cellSize));
+        int maxY = static_cast<int>(std::floor((position.y + radius) / cellSize));
 
-        for (int x = cx - 1; x <= cx + 1; ++x) {
-            for (int y = cy - 1; y <= cy + 1; ++y) {
+        for (int x = minX; x <= maxX; ++x) {
+            for (int y = minY; y <= maxY; ++y) {
                 int key = hash(x, y);
                 auto it = grid.find(key);
                 if (it != grid.end()) {

@@ -32,4 +32,6 @@ private:
     auto renderNodeInspector() -> void;
     auto renderOverlay() -> void;
     auto renderTrafficLog() -> void;
+    
+    auto setupStyle() -> void; // Apply custom visual theme
 };

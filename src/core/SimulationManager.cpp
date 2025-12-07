@@ -82,7 +82,8 @@ auto SimulationManager::handleInput(const Camera2D& camera) -> void {
     }
 
     // Handle Node selection (click) via Visualizer
-    if (leftPressed) {
+    // Only select if NOT painting
+    if (!isPainting && leftPressed) {
         int clickedNodeId = -1;
         // Iterate through all rings and ask the visualizer to check for clicks
         if (visualizer) {
@@ -105,6 +106,21 @@ auto SimulationManager::handleInput(const Camera2D& camera) -> void {
             // Clicked empty space -> clear selection if not multi-selecting
             clearSelection();
         }
+    }
+
+    // Painting Logic
+    static int paintFrame = 0;
+    if (isPainting && leftDown && !rings.empty()) {
+        paintFrame++;
+        if (paintFrame % 5 == 0) {
+            auto& ring = *rings.front();
+            ring.addNode(std::format("P_Node_{}", ring.getNodeCount()));
+            Node& n = ring[ring.getNodeCount()-1];
+            Vector2 worldPos = GetScreenToWorld2D(mousePos, camera);
+            n.setPosition(worldPos);
+        }
+    } else {
+        paintFrame = 0;
     }
 }
 

@@ -70,50 +70,13 @@ void Visualizer::drawTokenTrail() {
 }
 
 void Visualizer::drawRingGlow(const Ring &ring) {
-    const auto &nodes = ring.getNodes();
-
-    for (size_t i = 0; i < nodes.size(); ++i) {
-        size_t nextIdx = (i + 1) % nodes.size();
-        Vector2 from = nodes[i]->getPosition();
-        Vector2 to = nodes[nextIdx]->getPosition();
-
-        // Animated flowing glow effect
-        float flowOffset = fmod(animationTime * 50.0f, 20.0f);
-        
-        // Multiple glow layers for depth
-        Color glowColor1 = ColorFromHSV(200.0f, 0.7f, 0.8f);
-        glowColor1.a = 20;
-        DrawLineEx(from, to, 12.0f, glowColor1);
-        
-        Color glowColor2 = ColorFromHSV(200.0f, 0.8f, 0.9f);
-        glowColor2.a = 40;
-        DrawLineEx(from, to, 8.0f, glowColor2);
-        
-        Color glowColor3 = ColorFromHSV(200.0f, 0.9f, 1.0f);
-        glowColor3.a = 60;
-        DrawLineEx(from, to, 4.0f, glowColor3);
-        
-        // Draw flowing particles along the line
-        Vector2 dir = {to.x - from.x, to.y - from.y};
-        float length = sqrt(dir.x * dir.x + dir.y * dir.y);
-        if (length > 0) {
-            dir.x /= length;
-            dir.y /= length;
-            
-            for (float d = flowOffset; d < length; d += 20.0f) {
-                Vector2 particlePos = {from.x + dir.x * d, from.y + dir.y * d};
-                Color particleColor = ColorFromHSV(200.0f, 0.8f, 1.0f);
-                particleColor.a = 150;
-                DrawCircleV(particlePos, 3.0f, particleColor);
-            }
-        }
-    }
+    // Functionality removed as per user request (unwanted blue line)
 }
 
 void Visualizer::drawRing(const Ring &ring, float dt) {
     animationTime += dt;
 
-    drawRingGlow(ring);
+    // drawRingGlow(ring); // Removed
     drawConnections(ring);
     drawDataTransfers(dt);
 
@@ -143,8 +106,8 @@ void Visualizer::drawRing(const Ring &ring, float dt) {
         Vector2 tokenPos = {from.x + (to.x - from.x) * progress,
                             from.y + (to.y - from.y) * progress};
 
-        addTokenTrailPoint(tokenPos);
-        drawToken(from, to, progress);
+        // addTokenTrailPoint(tokenPos);
+        // drawToken(from, to, progress);
 
         // Spawn particles occasionally
         // if (GetRandomValue(0, 100) < 30) {
@@ -224,13 +187,36 @@ void Visualizer::drawToken(Vector2 from, Vector2 to, float progress) {
 
 void Visualizer::drawConnections(const Ring &ring) {
     const auto &nodes = ring.getNodes();
+    if (nodes.empty()) return;
 
-    for (size_t i = 0; i < nodes.size(); ++i) {
-        size_t nextIdx = (i + 1) % nodes.size();
-        Vector2 from = nodes[i]->getPosition();
-        Vector2 to = nodes[nextIdx]->getPosition();
+    // Build a fast lookup for node positions
+    std::unordered_map<int, Vector2> posMap;
+    for (const auto& node : nodes) {
+        posMap[node->getId()] = node->getPosition();
+    }
 
-        DrawLineEx(from, to, 3.0f, GRAY);
+    for (const auto& node : nodes) {
+        Vector2 pos1 = node->getPosition();
+        int id1 = node->getId();
+
+        // Draw lines only to actual bonded neighbors
+        for (int id2 : node->getNeighbors()) {
+            // Optimization: Draw each bond only once
+            if (id1 < id2) {
+                if (posMap.find(id2) != posMap.end()) {
+                    Vector2 pos2 = posMap[id2];
+                    
+                    // Calculate transparency based on distance relative to ideal distance
+                    float dist = Vector2Distance(pos1, pos2);
+                    float stretch = dist / (ring.physics.idealDist * 1.5f); // Fade out as it stretches
+                    float alpha = std::max(0.2f, 1.0f - stretch);
+                    
+                    Color lineColor = GRAY;
+                    lineColor.a = (unsigned char)(alpha * 200);
+                    DrawLineEx(pos1, pos2, 2.0f, lineColor);
+                }
+            }
+        }
     }
 }
 

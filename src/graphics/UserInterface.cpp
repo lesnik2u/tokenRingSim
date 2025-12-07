@@ -3,13 +3,72 @@
 #include "rlImGui.h"
 #include <format>
 #include <cstring>
+#include <map>
 #include "utils/Logger.h"
 
 UserInterface::UserInterface(SimulationManager& sim, Visualizer& visualizer)
-    : sim(sim), visualizer(visualizer) {}
+    : sim(sim), visualizer(visualizer) {
+    setupStyle();
+}
 
 auto UserInterface::isMouseCaptured() const -> bool {
     return ImGui::GetIO().WantCaptureMouse;
+}
+
+auto UserInterface::setupStyle() -> void {
+    ImGuiStyle& style = ImGui::GetStyle();
+    
+    style.WindowRounding = 8.0f;
+    style.FrameRounding = 4.0f;
+    style.GrabRounding = 4.0f;
+    style.PopupRounding = 4.0f;
+    style.ScrollbarRounding = 4.0f;
+    style.FramePadding = ImVec2(8, 4);
+    style.ItemSpacing = ImVec2(8, 6);
+    
+    ImVec4* colors = style.Colors;
+    colors[ImGuiCol_Text]                   = ImVec4(0.90f, 0.90f, 0.95f, 1.00f);
+    colors[ImGuiCol_TextDisabled]           = ImVec4(0.50f, 0.50f, 0.50f, 1.00f);
+    colors[ImGuiCol_WindowBg]               = ImVec4(0.10f, 0.10f, 0.12f, 0.95f);
+    colors[ImGuiCol_ChildBg]                = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+    colors[ImGuiCol_PopupBg]                = ImVec4(0.12f, 0.12f, 0.14f, 0.95f);
+    colors[ImGuiCol_Border]                 = ImVec4(0.30f, 0.30f, 0.35f, 0.50f);
+    colors[ImGuiCol_BorderShadow]           = ImVec4(0.00f, 0.00f, 0.00f, 0.00f);
+    colors[ImGuiCol_FrameBg]                = ImVec4(0.20f, 0.20f, 0.22f, 1.00f);
+    colors[ImGuiCol_FrameBgHovered]         = ImVec4(0.25f, 0.25f, 0.28f, 1.00f);
+    colors[ImGuiCol_FrameBgActive]          = ImVec4(0.30f, 0.30f, 0.34f, 1.00f);
+    colors[ImGuiCol_TitleBg]                = ImVec4(0.10f, 0.10f, 0.12f, 1.00f);
+    colors[ImGuiCol_TitleBgActive]          = ImVec4(0.15f, 0.15f, 0.18f, 1.00f);
+    colors[ImGuiCol_TitleBgCollapsed]       = ImVec4(0.10f, 0.10f, 0.12f, 0.70f);
+    colors[ImGuiCol_MenuBarBg]              = ImVec4(0.14f, 0.14f, 0.16f, 1.00f);
+    colors[ImGuiCol_ScrollbarBg]            = ImVec4(0.02f, 0.02f, 0.02f, 0.53f);
+    colors[ImGuiCol_ScrollbarGrab]          = ImVec4(0.31f, 0.31f, 0.31f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrabHovered]   = ImVec4(0.41f, 0.41f, 0.41f, 1.00f);
+    colors[ImGuiCol_ScrollbarGrabActive]    = ImVec4(0.51f, 0.51f, 0.51f, 1.00f);
+    colors[ImGuiCol_CheckMark]              = ImVec4(0.00f, 0.60f, 0.90f, 1.00f);
+    colors[ImGuiCol_SliderGrab]             = ImVec4(0.00f, 0.50f, 0.80f, 1.00f);
+    colors[ImGuiCol_SliderGrabActive]       = ImVec4(0.00f, 0.60f, 0.90f, 1.00f);
+    colors[ImGuiCol_Button]                 = ImVec4(0.20f, 0.25f, 0.30f, 1.00f);
+    colors[ImGuiCol_ButtonHovered]          = ImVec4(0.25f, 0.35f, 0.45f, 1.00f);
+    colors[ImGuiCol_ButtonActive]           = ImVec4(0.00f, 0.40f, 0.70f, 1.00f);
+    colors[ImGuiCol_Header]                 = ImVec4(0.20f, 0.25f, 0.30f, 1.00f);
+    colors[ImGuiCol_HeaderHovered]          = ImVec4(0.25f, 0.35f, 0.45f, 1.00f);
+    colors[ImGuiCol_HeaderActive]           = ImVec4(0.00f, 0.40f, 0.70f, 1.00f);
+    colors[ImGuiCol_Separator]              = ImVec4(0.43f, 0.43f, 0.50f, 0.50f);
+    colors[ImGuiCol_SeparatorHovered]       = ImVec4(0.10f, 0.40f, 0.75f, 0.78f);
+    colors[ImGuiCol_SeparatorActive]        = ImVec4(0.10f, 0.40f, 0.75f, 1.00f);
+    colors[ImGuiCol_ResizeGrip]             = ImVec4(0.26f, 0.59f, 0.98f, 0.25f);
+    colors[ImGuiCol_ResizeGripHovered]      = ImVec4(0.26f, 0.59f, 0.98f, 0.67f);
+    colors[ImGuiCol_ResizeGripActive]       = ImVec4(0.26f, 0.59f, 0.98f, 0.95f);
+    colors[ImGuiCol_Tab]                    = ImVec4(0.15f, 0.15f, 0.18f, 1.00f);
+    colors[ImGuiCol_TabHovered]             = ImVec4(0.25f, 0.35f, 0.45f, 1.00f);
+    colors[ImGuiCol_TabActive]              = ImVec4(0.20f, 0.25f, 0.30f, 1.00f);
+    colors[ImGuiCol_TabUnfocused]           = ImVec4(0.10f, 0.10f, 0.12f, 1.00f);
+    colors[ImGuiCol_TabUnfocusedActive]     = ImVec4(0.15f, 0.15f, 0.18f, 1.00f);
+    colors[ImGuiCol_PlotLines]              = ImVec4(0.61f, 0.61f, 0.61f, 1.00f);
+    colors[ImGuiCol_PlotLinesHovered]       = ImVec4(1.00f, 0.43f, 0.35f, 1.00f);
+    colors[ImGuiCol_PlotHistogram]          = ImVec4(0.90f, 0.70f, 0.00f, 1.00f);
+    colors[ImGuiCol_PlotHistogramHovered]   = ImVec4(1.00f, 0.60f, 0.00f, 1.00f);
 }
 
 auto UserInterface::render() -> void {
@@ -18,16 +77,13 @@ auto UserInterface::render() -> void {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("Windows")) {
             ImGui::MenuItem("Network Controller", nullptr, &showNetworkController);
-            // ImGui::MenuItem("Traffic Log", nullptr, &showTrafficLog);
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
     }
 
     if (showNetworkController) renderNetworkController();
-    // Node Inspector is always active as popup/overlay when nodes are selected
     renderNodeInspector();
-    // if (showTrafficLog) renderTrafficLog();
     renderOverlay();
 
     rlImGuiEnd();
@@ -35,301 +91,275 @@ auto UserInterface::render() -> void {
 
 auto UserInterface::renderOverlay() -> void {
     const float padding = 10.0f;
-    ImGui::SetNextWindowPos({padding, 30}, ImGuiCond_FirstUseEver); // Offset for menu bar
-    ImGui::SetNextWindowBgAlpha(0.35f);
-    if (ImGui::Begin("Overlay", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav)) {
-        ImGui::Text("Distributed System Sim");
-        ImGui::Text("FPS: %d", GetFPS());
+    ImGui::SetNextWindowPos({padding, 30}, ImGuiCond_FirstUseEver); 
+    ImGui::SetNextWindowBgAlpha(0.60f); 
+    if (ImGui::Begin("Stats Overlay", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing | ImGuiWindowFlags_NoNav)) {
+        ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "Distributed Sim");
         ImGui::Separator();
+        ImGui::Text("FPS: %d", GetFPS());
         
         size_t totalNodes = 0;
         for(const auto& ring : sim.getRings()) totalNodes += ring->getNodeCount();
         
-        ImGui::Text("Rings: %zu", sim.getRings().size());
-        ImGui::Text("Total Nodes: %zu", totalNodes);
-        ImGui::Text("Selection: %zu", sim.getSelectedNodes().size());
+        ImGui::Text("Nodes: %zu", totalNodes);
+        ImGui::Text("Selected: %zu", sim.getSelectedNodes().size());
     }
     ImGui::End();
 }
 
 auto UserInterface::renderNetworkController() -> void {
+    ImGui::SetNextWindowSize({400, 500}, ImGuiCond_FirstUseEver);
     ImGui::Begin("Network Controller", &showNetworkController);
 
-    // --- Global Management ---
-    if (ImGui::CollapsingHeader("Simulation", ImGuiTreeNodeFlags_DefaultOpen)) {
-        if (ImGui::Button("Create New Ring")) {
-            float offset = sim.getRings().size() * 300.0f;
-            auto& r = sim.addRing({640.0f + offset, 360.0f}, 200.0f);
-            r.addNode(std::format("Node_{}_{}", r.getRingId(), r.getNodeCount()));
-            r.addNode(std::format("Node_{}_{}", r.getRingId(), r.getNodeCount()));
-            r.setRingFormation(ringFormation); // Set ring formation for new ring
-            selectedRingIndex = sim.getRings().size() - 1; // Auto-select new ring
-        }
+    if (sim.getRings().empty()) {
+         sim.addRing({640.0f, 360.0f}, 200.0f);
     }
+    auto& worldRing = *sim.getRings().front();
 
-    ImGui::Separator();
-
-    // --- Ring Selector ---
-    const auto& rings = sim.getRings();
-    if (rings.empty()) {
-        ImGui::Text("No rings available.");
-        ImGui::End();
-        return;
-    }
-
-    // Build list of ring names for combo box
-    if (selectedRingIndex >= static_cast<int>(rings.size())) selectedRingIndex = -1;
-    
-    std::string previewVal = (selectedRingIndex >= 0) ? std::format("Ring #{}", rings[selectedRingIndex]->getRingId()) : "Select a Ring...";
-    
-    if (ImGui::BeginCombo("Active Ring", previewVal.c_str())) {
-        for (int i = 0; i < static_cast<int>(rings.size()); ++i) {
-            const bool isSelected = (selectedRingIndex == i);
-            std::string label = std::format("Ring #{}", rings[i]->getRingId());
-            if (ImGui::Selectable(label.c_str(), isSelected)) {
-                selectedRingIndex = i;
-            }
-            if (isSelected) ImGui::SetItemDefaultFocus();
-        }
-        ImGui::EndCombo();
-    }
-
-    if (selectedRingIndex < 0) {
-        ImGui::TextColored(ImVec4(1,1,0,1), "Please select a ring to perform operations.");
-        ImGui::End();
-        return;
-    }
-
-    // --- Context-Sensitive Operations ---
-    // Validate selectedRingIndex before dereferencing
-    if (selectedRingIndex < 0 || selectedRingIndex >= static_cast<int>(rings.size())) {
-        ImGui::TextColored(ImVec4(1,0,0,1), "Invalid ring selection!");
-        ImGui::End();
-        return;
-    }
-    
-    auto& ring = *rings[selectedRingIndex];
-
-    if (ImGui::CollapsingHeader("Node Operations", ImGuiTreeNodeFlags_DefaultOpen)) {
-        if (!sim.getRings().empty()) {
-            ImGui::Text("Operating on Ring #%d", (int)ring.getRingId());
+    if (ImGui::BeginTabBar("ControllerTabs")) {
+        
+        // --- Tab 1: General ---
+        if (ImGui::BeginTabItem("General")) {
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "Simulation Control");
+            ImGui::Separator();
             
-            if (ImGui::Button("Add Node")) {
-                ring.addNode(std::format("Node_{}_{}", ring.getRingId(), ring.getNodeCount()));
+            static int spawnAmount = 50;
+            ImGui::SliderInt("Spawn Amount", &spawnAmount, 1, 1000);
+            
+            if (ImGui::Button("Spawn Nodes", ImVec2(-1, 0))) { 
+                for(int i=0; i<spawnAmount; ++i) {
+                    worldRing.addNode(std::format("Node_{}", worldRing.getNodeCount()));
+                    Node& n = worldRing[worldRing.getNodeCount()-1];
+                    n.setPosition({(float)GetRandomValue(100, 1180), (float)GetRandomValue(100, 620)});
+                }
             }
-            ImGui::SameLine();
-            if (ImGui::Button("Remove Ring")) {
-                sim.removeRing(selectedRingIndex);
-                selectedRingIndex = -1; // Reset selection
-                ImGui::End();
-                return;
+            
+            ImGui::Spacing();
+            
+            bool paintMode = sim.getPainting();
+            if (ImGui::Checkbox("Paint Mode (Hold Click)", &paintMode)) {
+                sim.setPainting(paintMode);
             }
-        } else {
-            ImGui::Text("No rings available.");
+            
+            if (ImGui::Button("Clear World", ImVec2(-1, 0))) {
+                while(worldRing.getNodeCount() > 0) {
+                    worldRing.removeLastNode();
+                }
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Text("Mobility:");
+            
+            if (ImGui::Checkbox("Enable Physics", &mobilityEnabled)) {
+                worldRing.setAllNodesMobile(mobilityEnabled);
+            }
+            
+            if (mobilityEnabled) {
+                if (ImGui::Checkbox("Emergent Forces", &ringFormation)) {
+                    worldRing.setRingFormation(ringFormation);
+                }
+            }
+            
+            ImGui::EndTabItem();
         }
-    }
 
-    ImGui::Separator();
-    if (ImGui::Checkbox("Enable Node Mobility", &mobilityEnabled)) {
-        ring.setAllNodesMobile(mobilityEnabled);
-    }
-    
-    ImGui::Separator();
-    if (mobilityEnabled) {
-        ImGui::Indent();
-        if (ImGui::Checkbox("Ring Formation Force", &ringFormation)) {
-            for(auto& r : sim.getRings()) r->setRingFormation(ringFormation);
+        // --- Tab 2: Physics ---
+        if (ImGui::BeginTabItem("Physics")) {
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.0f, 1.0f), "Force Parameters");
+            ImGui::Separator();
+
+            // Max Cluster Size
+            int currentMaxCluster = worldRing.getMaxClusterSize();
+            if (ImGui::SliderInt("Max Ring Size", &currentMaxCluster, 5, 100)) {
+                worldRing.setMaxClusterSize(currentMaxCluster);
+            }
+            if(ImGui::IsItemHovered()) ImGui::SetTooltip("Maximum nodes allowed in a single emergent ring before it splits.");
+
+            ImGui::Spacing();
+
+            ImGui::SliderFloat("Search Radius", &worldRing.physics.searchRadius, 50.0f, 300.0f);
+            ImGui::SliderFloat("Ideal Spacing", &worldRing.physics.idealDist, 20.0f, 150.0f);
+            
+            ImGui::Spacing();
+            ImGui::Text("Strengths:");
+            ImGui::SliderFloat("Attraction", &worldRing.physics.chainAttractStrength, 0.0f, 50.0f);
+            ImGui::SliderFloat("Repulsion", &worldRing.physics.repulsionStrength, 0.0f, 200.0f);
+            ImGui::SliderFloat("Vortex (Curl)", &worldRing.physics.vortexStrength, 0.0f, 20.0f);
+            ImGui::SliderFloat("Gravity (Cluster)", &worldRing.physics.boundaryStrength, 0.0f, 10.0f);
+            ImGui::SliderFloat("Split Force", &worldRing.physics.splitStrength, 0.0f, 300.0f);
+            
+            ImGui::Spacing();
+            ImGui::SliderFloat("Friction", &worldRing.physics.friction, 0.80f, 0.99f);
+            ImGui::SliderFloat("Max Speed", &worldRing.physics.maxSpeed, 100.0f, 1000.0f);
+
+            ImGui::EndTabItem();
         }
-        ImGui::Unindent();
-    }
-    
-    ImGui::Separator();
-    // Replication Factor Control
-    int currentRF = ring.getReplicationFactor();
-    if (ImGui::SliderInt("Replication Factor", &currentRF, 1, std::max(1, (int)ring.getNodeCount()))) {
-        ring.setReplicationFactor(currentRF);
-    }
-    
-    ImGui::Separator();
-    ImGui::Text("Data Management:");
 
-    static char keyBuf[64] = "";
-    static char valueBuf[128] = "";
+        // --- Tab 3: Inspection ---
+        if (ImGui::BeginTabItem("Inspector")) {
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(0.0f, 0.8f, 0.0f, 1.0f), "Emergent Rings");
+            ImGui::Separator();
 
-    ImGui::InputText("Key", keyBuf, sizeof(keyBuf));
-    ImGui::InputText("Value", valueBuf, sizeof(valueBuf));
-
-    if (ImGui::Button("Insert Data")) {
-        if (strlen(keyBuf) > 0) {
-            ring.insertData(std::string(keyBuf), std::string(valueBuf));
-            keyBuf[0] = '\0';
-            valueBuf[0] = '\0';
+            std::map<int, std::vector<int>> clusters;
+            for(const auto& node : worldRing.getNodes()) {
+                int cid = node->getClusterId();
+                if(cid != -1) clusters[cid].push_back(node->getId());
+            }
+            
+            if (clusters.empty()) {
+                ImGui::TextDisabled("No rings formed.");
+            } else {
+                ImGui::BeginChild("ClusterList");
+                for(auto& [cid, members] : clusters) {
+                    if(members.size() < 3) continue;
+                    
+                    std::string label = std::format("Ring #{} ({} nodes)", cid, members.size());
+                    if (ImGui::Selectable(label.c_str())) {
+                        sim.clearSelection();
+                        for(int nid : members) sim.selectNode(nid, true);
+                    }
+                }
+                ImGui::EndChild();
+            }
+            ImGui::EndTabItem();
         }
+        
+        // --- Tab 4: Data ---
+        if (ImGui::BeginTabItem("Data")) {
+            ImGui::Spacing();
+            static char keyBuf[64] = "";
+            static char valueBuf[128] = "";
+
+            ImGui::InputText("Key", keyBuf, sizeof(keyBuf));
+            ImGui::InputText("Value", valueBuf, sizeof(valueBuf));
+
+            if (ImGui::Button("Insert Data", ImVec2(-1, 0))) {
+                if (strlen(keyBuf) > 0) {
+                    worldRing.insertData(std::string(keyBuf), std::string(valueBuf));
+                    keyBuf[0] = '\0';
+                    valueBuf[0] = '\0';
+                }
+            }
+            
+            if (ImGui::Button("Random Insert", ImVec2(-1, 0))) {
+                std::string key = std::format("key_{}", GetRandomValue(1000, 9999));
+                std::string value = std::format("val_{}", GetRandomValue(100, 999));
+                worldRing.insertData(key, value);
+            }
+            ImGui::EndTabItem();
+        }
+
+        ImGui::EndTabBar();
     }
-    ImGui::SameLine();
-    if (ImGui::Button("Random Insert")) {
-        std::string key = std::format("key_{}", GetRandomValue(1000, 9999));
-        std::string value = std::format("val_{}", GetRandomValue(100, 999));
-        ring.insertData(key, value);
-    }
-    // Delete Data button was causing compilation issues due to `ring.deleteData` not existing.
-    // So, I'm not re-adding it for now.
 
     ImGui::End();
 }
 
 auto UserInterface::renderNodeInspector() -> void {
-    // No main window anymore, just floating windows for selected nodes
-    
     const auto& selectedNodeIds = sim.getSelectedNodes();
-    
-    // We need a copy of IDs because a node might be removed within the loop
-    std::vector<int> nodeIdsToRender = selectedNodeIds;
-    
-    for (int nodeId : nodeIdsToRender) {
-        Node* node = sim.findNodeById(nodeId);
-        
-        if (!node) continue; // Node was deleted, skip
-        
-        bool open = true;
-        bool nodeRemoved = false;
-        
-        // Set default position if the window is appearing for the first time
-        // Using a unique ID for each inspector window to allow multiple to be open
-        ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 350.0f, 50.0f + (nodeId * 30)), ImGuiCond_FirstUseEver); // Offset positions
+    if (selectedNodeIds.empty()) return;
+
+    if (selectedNodeIds.size() > 1) {
+        ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 350.0f, 50.0f), ImGuiCond_FirstUseEver);
         ImGui::SetNextWindowSize({300, 450}, ImGuiCond_FirstUseEver);
-
-        std::string windowTitle = std::format("{} (ID: {})###NodeInspector_{}", node->getName(), node->getId(), node->getId());
         
-        if (ImGui::Begin(windowTitle.c_str(), &open)) {
-            ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
-            ImGui::PushStyleVar(ImGuiStyleVar_GrabRounding, 3.0f);
-            ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 3.0f);
-
-            // Node Details
-            ImGui::TextColored(ImVec4(0.8f, 0.8f, 1.0f, 1.0f), "Node Details");
+        if (ImGui::Begin("Multi-Node Inspector", nullptr)) {
+            ImGui::TextColored(ImVec4(0.0f, 0.8f, 1.0f, 1.0f), "Selection: %zu Nodes", selectedNodeIds.size());
             ImGui::Separator();
-            ImGui::Text("Name: %s", std::string(node->getName()).c_str());
-            ImGui::Text("ID: %d", node->getId());
-            ImGui::Text("Position: (%.1f, %.1f)", node->getPosition().x, node->getPosition().y);
-            ImGui::Text("Range: [%d° - %d°)", node->getTokenRangeStart(), node->getTokenRangeEnd());
             
-            // Node Status Toggle
-            bool isActive = node->isActive();
-            if (ImGui::Checkbox("Active", &isActive)) {
-                node->setActive(isActive);
-                APP_LOG_INFO("Node '{}' set to {}", node->getName(), isActive ? "Active" : "Offline");
+            if (ImGui::Button("Deselect All")) {
+                sim.clearSelection();
             }
-            
             ImGui::SameLine();
-            if (ImGui::Button("Remove Node")) {
-                // We need to find which ring this node belongs to
-                Ring* ownerRing = nullptr;
-                for(auto& ring : sim.getRings()) {
-                    for(const auto& n : ring->getNodes()) {
-                        if(n.get() == node) {
-                            ownerRing = ring.get();
-                            break;
-                        }
-                    }
-                    if(ownerRing) break;
+            if (ImGui::Button("Delete Selection")) {
+                std::vector<int> ids = selectedNodeIds;
+                if (!sim.getRings().empty()) {
+                    auto& ring = *sim.getRings().front();
+                    for(int id : ids) ring.removeNode(id);
                 }
-                
-                if(ownerRing) {
-                    // Check if this is the last node in the ring
-                    if(ownerRing->getNodeCount() <= 1) {
-                        APP_LOG_ERROR("Cannot remove last node from ring");
-                        ImGui::OpenPopup("Error##CannotRemoveLastNode");
-                    } else {
-                        int removedNodeId = node->getId(); // Store ID before node is destroyed
-                        ownerRing->removeNode(removedNodeId);
-                        // sim.onNodeRemoved(removedNodeId); // Removed, as Ring now notifies SimulationManager
-                        nodeRemoved = true;
-                        open = false; // Close window
-                    }
+                sim.clearSelection();
+            }
+
+            ImGui::Separator();
+            ImGui::BeginChild("NodeList");
+            for (int nodeId : selectedNodeIds) {
+                Node* node = sim.findNodeById(nodeId);
+                if (node) {
+                    ImGui::Text("Node %d: %s (Cluster %d)", nodeId, std::string(node->getName()).c_str(), node->getClusterId());
                 }
             }
-            
-            // Error popup
-            if (ImGui::BeginPopupModal("Error##CannotRemoveLastNode", NULL, ImGuiWindowFlags_AlwaysAutoResize)) {
-                ImGui::Text("Cannot remove the last node from a ring!");
-                ImGui::Separator();
-                if (ImGui::Button("OK", ImVec2(120, 0))) {
-                    ImGui::CloseCurrentPopup();
-                }
-                ImGui::EndPopup();
-            }
-            
-            // If node was removed, skip rendering the rest and close window immediately
-            if (!nodeRemoved) {
-                ImGui::Separator();
-                ImGui::TextColored(ImVec4(0.8f, 0.8f, 1.0f, 1.0f), "Stored Data (%zu items):", node->getDataCount());
-                ImGui::Separator();
-                
-                if (ImGui::BeginTable("Data", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY)) {
-                    ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 60.0f);
-                    ImGui::TableSetupColumn("Key");
-                    ImGui::TableSetupColumn("Value");
-                    ImGui::TableSetupColumn("Hash", ImGuiTableColumnFlags_WidthFixed, 40.0f);
-                    ImGui::TableHeadersRow();
-                    
-                    for(const auto& data : node->getStoredData()) {
-                    ImGui::TableNextRow();
-                    ImGui::TableSetColumnIndex(0);
-                    if (data->getIsReplica()) {
-                        ImGui::TextColored(ImVec4(0.8f, 0.5f, 0.8f, 1.0f), "Replica");
-                        if(ImGui::IsItemHovered()) ImGui::SetTooltip("This data item is a replica.");
-                    }
-                    else {
-                        ImGui::TextColored(ImVec4(0.5f, 0.8f, 1.0f, 1.0f), "Primary");
-                        if(ImGui::IsItemHovered()) ImGui::SetTooltip("This data item is primary.");
-                    }
-                    
-                    ImGui::TableSetColumnIndex(1);
-                    ImGui::Text("%s", data->getKey().c_str());
-                    if(ImGui::IsItemHovered()) ImGui::SetTooltip("Key: %s", data->getKey().c_str());
-                    
-                    ImGui::TableSetColumnIndex(2);
-                    ImGui::Text("%s", data->getValue().c_str());
-                    if(ImGui::IsItemHovered()) ImGui::SetTooltip("Value: %s", data->getValue().c_str());
-                    
-                    ImGui::TableSetColumnIndex(3);
-                    ImGui::Text("%d°", data->getHash());
-                    if(ImGui::IsItemHovered()) ImGui::SetTooltip("Hash: %d degrees", data->getHash());
-                }
-                    ImGui::EndTable();
-                }
-            }
-            ImGui::PopStyleVar(3); // Moved here to be unconditional
+            ImGui::EndChild();
         }
         ImGui::End();
+        return;
+    }
+
+    int nodeId = selectedNodeIds[0];
+    Node* node = sim.findNodeById(nodeId);
+    if (!node) return; 
+    
+    bool open = true;
+    bool nodeRemoved = false;
+    
+    ImGui::SetNextWindowPos(ImVec2(ImGui::GetIO().DisplaySize.x - 350.0f, 50.0f), ImGuiCond_FirstUseEver); 
+    ImGui::SetNextWindowSize({300, 450}, ImGuiCond_FirstUseEver);
+
+    std::string windowTitle = std::format("{} (ID: {})###NodeInspector_{}", node->getName(), node->getId(), node->getId());
+    
+    if (ImGui::Begin(windowTitle.c_str(), &open)) {
+        ImGui::TextColored(ImVec4(0.8f, 0.8f, 1.0f, 1.0f), "Node Details");
+        ImGui::Separator();
+        ImGui::Text("Name: %s", std::string(node->getName()).c_str());
+        ImGui::Text("ID: %d", node->getId());
+        ImGui::Text("Ring Cluster: %d", node->getClusterId());
+        ImGui::Text("Position: (%.1f, %.1f)", node->getPosition().x, node->getPosition().y);
         
-        if (!open && !nodeRemoved) {
-            // Deselect this node only if it wasn't removed
-            sim.selectNode(nodeId, true); // This toggles it off because it's already selected
+        bool isActive = node->isActive();
+        if (ImGui::Checkbox("Active", &isActive)) {
+            node->setActive(isActive);
+        }
+        
+        ImGui::SameLine();
+        if (ImGui::Button("Remove Node")) {
+            if (!sim.getRings().empty()) {
+                auto& ring = *sim.getRings().front();
+                ring.removeNode(nodeId);
+                nodeRemoved = true;
+                open = false;
+            }
+        }
+        
+        if (!nodeRemoved) {
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(0.8f, 0.8f, 1.0f, 1.0f), "Stored Data (%zu items):", node->getDataCount());
+            ImGui::Separator();
+            
+            if (ImGui::BeginTable("Data", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_Resizable | ImGuiTableFlags_ScrollY)) {
+                ImGui::TableSetupColumn("Type", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+                ImGui::TableSetupColumn("Key");
+                ImGui::TableSetupColumn("Value");
+                ImGui::TableHeadersRow();
+                
+                for(const auto& data : node->getStoredData()) {
+                    ImGui::TableNextRow();
+                    ImGui::TableSetColumnIndex(0);
+                    ImGui::Text("%s", data->getIsReplica() ? "Replica" : "Primary");
+                    ImGui::TableSetColumnIndex(1);
+                    ImGui::Text("%s", data->getKey().c_str());
+                    ImGui::TableSetColumnIndex(2);
+                    ImGui::Text("%s", data->getValue().c_str());
+                }
+                ImGui::EndTable();
+            }
         }
     }
-}
-
-/*
-auto UserInterface::renderTrafficLog() -> void {
-    ImGui::SetNextWindowSize({500, 300}, ImGuiCond_FirstUseEver);
-    ImGui::Begin("Traffic Log", &showTrafficLog);
-
-    ImGui::TextColored(ImVec4(0.5f, 0.5f, 0.5f, 1.0f), "Event Stream:");
-    ImGui::Separator();
-
-    ImGui::BeginChild("LogScrollRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
-    
-    const auto& logs = Logger::instance().getRecentLogs();
-    for (const auto& log : logs) {
-        ImGui::TextUnformatted(log.c_str());
-    }
-
-    if (ImGui::GetScrollY() >= ImGui::GetScrollMaxY())
-        ImGui::SetScrollHereY(1.0f);
-
-    ImGui::EndChild();
     ImGui::End();
+    
+    if (!open && !nodeRemoved) {
+        sim.selectNode(nodeId, true);
+    }
 }
-*/

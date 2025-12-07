@@ -80,6 +80,24 @@ public:
     auto getSelected() const -> bool { return isSelected; }
     auto setSelected(bool selected) -> void { isSelected = selected; }
 
+    // Emergent Topology
+    std::vector<int> neighbors;
+    auto clearNeighbors() -> void { neighbors.clear(); }
+    auto addNeighbor(int id) -> void { neighbors.push_back(id); }
+    auto removeNeighbor(int id) -> void { 
+        std::erase(neighbors, id); 
+    }
+    auto getNeighbors() const -> const std::vector<int>& { return neighbors; }
+
+    // Cluster/Ring ID for logic
+    int clusterId = -1;
+    auto setClusterId(int id) -> void { clusterId = id; }
+    auto getClusterId() const -> int { return clusterId; }
+
+    int clusterSize = 1;
+    auto setClusterSize(int size) -> void { clusterSize = size; }
+    auto getClusterSize() const -> int { return clusterSize; }
+
     friend class Ring;
     friend class Visualizer;
 };
