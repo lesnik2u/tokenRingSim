@@ -23,10 +23,11 @@ private:
     // std::vector<Particle> particles;
     std::vector<Vector2> tokenTrail;
 
-    auto drawNode(const Node &node, bool hasToken) -> void;
+    auto drawNodesAdditive(const std::vector<std::unique_ptr<Node>>& nodes, const std::unordered_map<int, Color>& colorMap) -> void;
+    auto drawNodesText(const std::vector<std::unique_ptr<Node>>& nodes) -> void;
+    auto drawConnections(const std::vector<std::unique_ptr<Node>>& nodes, const std::unordered_map<int, Color>& colorMap) -> void;
+    
     auto drawToken(Vector2 from, Vector2 to, float progress) -> void;
-    auto drawConnections(const Ring &ring) -> void;
-    // auto drawParticles(float dt) -> void;
     auto drawTokenTrail() -> void;
     auto drawRingGlow(const Ring &ring) -> void;
 
@@ -50,4 +51,8 @@ public:
     auto startDataTransfer(Vector2 from, Vector2 to, std::string key, bool isReplication = false) -> void;
     auto checkNodeClick(const Ring &ring) -> int; // Returns the ID of the clicked node, or -1 if no node was clicked
     auto drawSelectedNodeHighlight(const Node &node) -> void;
+
+private:
+    RenderTexture2D nodeTexture;
+    auto bakeNodeTexture() -> void;
 };

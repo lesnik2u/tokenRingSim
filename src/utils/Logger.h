@@ -16,8 +16,17 @@ class Profiler {
     std::unordered_map<std::string, Entry> entries;
     std::unordered_map<std::string, std::chrono::high_resolution_clock::time_point> starts;
     std::chrono::high_resolution_clock::time_point reportStart = std::chrono::high_resolution_clock::now();
+    std::ofstream perfFile;
+
+    Profiler() {
+        perfFile.open("performance.log", std::ios::out | std::ios::trunc);
+    }
 
 public:
+    ~Profiler() {
+        if (perfFile.is_open()) perfFile.close();
+    }
+
     static auto instance() -> Profiler& {
         static Profiler p;
         return p;
@@ -39,16 +48,28 @@ public:
         auto now = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsed = now - reportStart;
         if (elapsed.count() > 2.0) { // Report every 2 seconds
-            std::cout << "\n--- PERF REPORT (avg ms/frame) ---\n";
-            for (auto& [name, entry] : entries) {
-                if (entry.count > 0)
-                    std::cout << std::format("{}: {:.3f} ms\n", name, entry.totalTime / entry.count);
-                entry.totalTime = 0;
-                entry.count = 0;
+            if (perfFile.is_open()) {
+                perfFile << "\n--- PERF REPORT (avg ms/frame) ---\n";
+                for (auto& [name, entry] : entries) {
+                    if (entry.count > 0)
+                        perfFile << std::format("{}: {:.3f} ms\n", name, entry.totalTime / entry.count);
+                    entry.totalTime = 0;
+                    entry.count = 0;
+                }
+                perfFile << "----------------------------------\n";
+                perfFile.flush();
             }
-            std::cout << "----------------------------------\n";
             reportStart = now;
         }
+    }
+
+    auto getAverageTime(const std::string& name) -> double {
+        if (entries.find(name) != entries.end()) {
+            auto& e = entries[name];
+            if (e.count == 0) return 0.0;
+            return e.totalTime / e.count;
+        }
+        return 0.0;
     }
 };
 

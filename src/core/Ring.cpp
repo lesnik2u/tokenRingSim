@@ -107,7 +107,14 @@ auto Ring::addNode(std::string name) -> void {
 
 auto Ring::removeLastNode() -> void {
     if (nodes.empty()) return;
-    APP_LOG_DEBUG("Removing node: {}", nodes.back()->getName());
+    Node* node = nodes.back().get();
+    
+    // Cleanup neighbors before deletion
+    for (Node* neighbor : node->getNeighbors()) {
+        neighbor->removeNeighbor(node);
+    }
+    
+    APP_LOG_DEBUG("Removing node: {}", node->getName());
     repartitionData();
     if (simulationManager_) simulationManager_->onNodeRemoved(nodes.back()->getId());
     nodes.pop_back();
@@ -121,6 +128,12 @@ auto Ring::removeNode(int nodeId) -> void {
 
     if (it != nodes.end()) {
         Node* nodeToRemove = it->get();
+        
+        // Important: Remove myself from my neighbors' lists to avoid dangling pointers
+        for (Node* neighbor : nodeToRemove->getNeighbors()) {
+            neighbor->removeNeighbor(nodeToRemove);
+        }
+
         messageQueue.erase(
             std::remove_if(messageQueue.begin(), messageQueue.end(),
                 [nodeId](const PendingMessage& msg) {
@@ -219,13 +232,13 @@ auto Ring::update(float dt) -> void {
             
             if (!neighbors.empty()) {
                 int prevId = token->getPreviousNodeId();
-                for (int nid : neighbors) {
-                    if (nid != prevId) {
-                        nextNodeId = nid;
+                for (Node* n : neighbors) {
+                    if (n->getId() != prevId) {
+                        nextNodeId = n->getId();
                         break;
                     }
                 }
-                if (nextNodeId == -1) nextNodeId = neighbors[0];
+                if (nextNodeId == -1) nextNodeId = neighbors[0]->getId();
             } else {
                 nextNodeId = currentId;
             }
@@ -321,7 +334,6 @@ auto Ring::resolveCollisions() -> void {
     neighbors.reserve(50);
 
     // Adaptive iterations based on system energy (max velocity)
-    // If everything is stable (low speed), we don't need aggressive collision checks.
     int iterations = (currentMaxVelocity < 5.0f) ? 1 : 4;
 
     for (int iter = 0; iter < iterations; ++iter) {
@@ -382,16 +394,12 @@ auto Ring::applyRingFormationForces() -> void {
         Vector2 pos = node->getPosition();
 
         // A. Maintenance
-        std::vector<int> currentNeighbors = node->getNeighbors();
-        for (int id : currentNeighbors) {
-            if (nodeMap.find(id) == nodeMap.end()) {
-                node->removeNeighbor(id);
-                continue;
-            }
-            Node* other = nodeMap[id];
+        std::vector<Node*> currentNeighbors = node->getNeighbors();
+        for (Node* other : currentNeighbors) {
             if (Vector2Distance(pos, other->getPosition()) > breakDist) {
-                node->removeNeighbor(id);
-                other->removeNeighbor(node->getId()); 
+                APP_LOG_DEBUG("Bond broken (dist): {} <-> {}", node->getId(), other->getId());
+                node->removeNeighbor(other);
+                other->removeNeighbor(node.get()); 
             }
         }
 
@@ -406,11 +414,11 @@ auto Ring::applyRingFormationForces() -> void {
                 if (other == node.get()) continue;
                 
                 bool alreadyBonded = false;
-                for(int id : node->getNeighbors()) if(id == other->getId()) alreadyBonded = true;
+                for(Node* n : node->getNeighbors()) if(n == other) alreadyBonded = true;
                 if(alreadyBonded) continue;
+                
                 if (other->getNeighbors().size() >= 2) continue;
 
-                // Prevent bonding if either is already oversize (Stop reconnection loops)
                 if (node->getClusterSize() > maxClusterSize || other->getClusterSize() > maxClusterSize) continue;
 
                 if (node->getClusterId() != -1 && other->getClusterId() != -1 && node->getClusterId() != other->getClusterId()) {
@@ -426,8 +434,9 @@ auto Ring::applyRingFormationForces() -> void {
                 if (node->getNeighbors().size() >= 2) break;
                 Node* other = item.second;
                 if (other->getNeighbors().size() < 2) { 
-                    node->addNeighbor(other->getId());
-                    other->addNeighbor(node->getId());
+                    APP_LOG_DEBUG("Bond formed: {} <-> {}", node->getId(), other->getId());
+                    node->addNeighbor(other);
+                    other->addNeighbor(node.get());
                 }
             }
         }
@@ -460,14 +469,11 @@ auto Ring::applyRingFormationForces() -> void {
                 clusterEnds[currentCluster].push_back(curr);
             }
 
-            for (int neighborId : curr->getNeighbors()) {
-                if (nodeMap.find(neighborId) != nodeMap.end()) {
-                    Node* neighbor = nodeMap[neighborId];
-                    if (neighbor->getClusterId() == -1) {
-                        neighbor->setClusterId(currentCluster);
-                        q.push(neighbor);
-                        size++;
-                    }
+            for (Node* neighbor : curr->getNeighbors()) {
+                if (neighbor->getClusterId() == -1) {
+                    neighbor->setClusterId(currentCluster);
+                    q.push(neighbor);
+                    size++;
                 }
             }
         }
@@ -488,27 +494,34 @@ auto Ring::applyRingFormationForces() -> void {
         int cid = node->getClusterId();
         int csize = (cid != -1) ? clusterSizes[cid] : 1;
         
-        // Split if too big
+        // Split
         if (csize > maxClusterSize) {
             if (node->getNeighbors().size() >= 2) {
                 if (GetRandomValue(0, 100) < 5) { 
-                    int target = node->getNeighbors()[0];
+                    Node* target = node->getNeighbors()[0];
+                    APP_LOG_DEBUG("Bond broken (split): {} <-> {}", node->getId(), target->getId());
                     node->removeNeighbor(target);
-                    if (nodeMap.count(target)) nodeMap[target]->removeNeighbor(node->getId());
+                    target->removeNeighbor(node.get());
                 }
             }
         }
         
-        // Insert if room available
+        // Insert
         if (csize < maxClusterSize && node->getNeighbors().size() == 2) {
             Vector2 pos = node->getPosition();
             spatialGrid.query(pos, physics.idealDist * 0.6f, candidates);
             for (Node* intruder : candidates) {
                 if (intruder == node.get()) continue;
+                
+                // Check if already a neighbor
+                bool isNeighbor = false;
+                for(Node* n : node->getNeighbors()) if(n == intruder) isNeighbor = true;
+                if(isNeighbor) continue;
+
                 if (intruder->getNeighbors().size() < 2) {
-                    int target = node->getNeighbors()[0];
+                    Node* target = node->getNeighbors()[0];
                     node->removeNeighbor(target);
-                    if (nodeMap.count(target)) nodeMap[target]->removeNeighbor(node->getId());
+                    target->removeNeighbor(node.get());
                     break; 
                 }
             }
@@ -544,10 +557,7 @@ auto Ring::applyRingFormationForces() -> void {
 
         // Bonded Forces
         int neighborIndex = 0;
-        for (int id : bondedIds) {
-            if (nodeMap.find(id) == nodeMap.end()) continue;
-            Node* other = nodeMap[id];
-            
+        for (Node* other : bondedIds) {
             if (myClusterSize > maxClusterSize && neighborIndex == 1) {
                 Vector2 dir = Vector2Subtract(other->getPosition(), pos);
                 dir = Vector2Normalize(dir);
@@ -575,7 +585,7 @@ auto Ring::applyRingFormationForces() -> void {
         for (Node* other : candidates) {
             if (other == node.get()) continue;
             bool isBonded = false;
-            for(int id : bondedIds) if(id == other->getId()) isBonded = true;
+            for(Node* n : bondedIds) if(n == other) isBonded = true;
             if (isBonded) continue;
 
             float d = Vector2Distance(pos, other->getPosition());
@@ -583,7 +593,10 @@ auto Ring::applyRingFormationForces() -> void {
             dir = Vector2Normalize(dir);
 
             int otherCluster = other->getClusterId();
-            int otherSize = (otherCluster != -1 && nodeMap.count(other->getId())) ? nodeMap[other->getId()]->getClusterSize() : 1;
+            int otherSize = (otherCluster != -1 && other->getId() < nodeMap.size()) ? other->getClusterSize() : 1; 
+            // Wait, other->getClusterSize() is safe. other is Node*.
+            otherSize = other->getClusterSize();
+
             bool shouldMerge = false;
             
             if (myCluster != otherCluster) {
@@ -719,7 +732,7 @@ auto Ring::getNextNode(int currentNodeId) -> Node* {
     
     const auto& neighbors = current->getNeighbors();
     if (neighbors.empty()) return current;
-    int nextId = neighbors[0];
+    int nextId = neighbors[0]->getId(); // Using ID from Node*
     for(auto& n : nodes) if(n->getId() == nextId) return n.get();
     return nullptr;
 }

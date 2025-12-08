@@ -32,6 +32,9 @@ public:
     auto getPosition() const -> Vector2 { return position; }
     auto getAngle() const -> float { return angle; }
     auto hasTokenPresent() const -> bool { return hasToken; }
+    
+    // Optimized accessor
+    auto getName() const -> const std::string& { return name; }
 
     auto setAngle(float newAngle) -> void;
     auto updatePosition(Vector2 center, float radius) -> void;
@@ -81,13 +84,13 @@ public:
     auto setSelected(bool selected) -> void { isSelected = selected; }
 
     // Emergent Topology
-    std::vector<int> neighbors;
+    std::vector<Node*> neighbors;
     auto clearNeighbors() -> void { neighbors.clear(); }
-    auto addNeighbor(int id) -> void { neighbors.push_back(id); }
-    auto removeNeighbor(int id) -> void { 
-        std::erase(neighbors, id); 
+    auto addNeighbor(Node* node) -> void { neighbors.push_back(node); }
+    auto removeNeighbor(Node* node) -> void { 
+        std::erase(neighbors, node); 
     }
-    auto getNeighbors() const -> const std::vector<int>& { return neighbors; }
+    auto getNeighbors() const -> const std::vector<Node*>& { return neighbors; }
 
     // Cluster/Ring ID for logic
     int clusterId = -1;

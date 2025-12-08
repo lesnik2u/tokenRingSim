@@ -103,6 +103,12 @@ auto UserInterface::renderOverlay() -> void {
         
         ImGui::Text("Nodes: %zu", totalNodes);
         ImGui::Text("Selected: %zu", sim.getSelectedNodes().size());
+        
+        if (sim.isBenchmarkActive()) {
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(1.0f, 0.5f, 0.0f, 1.0f), "BENCHMARKING...");
+            ImGui::Text("%s", sim.getBenchmarkStatus().c_str());
+        }
     }
     ImGui::End();
 }
@@ -133,6 +139,10 @@ auto UserInterface::renderNetworkController() -> void {
                     Node& n = worldRing[worldRing.getNodeCount()-1];
                     n.setPosition({(float)GetRandomValue(100, 1180), (float)GetRandomValue(100, 620)});
                 }
+            }
+            
+            if (ImGui::Button("Run Gradual Benchmark", ImVec2(-1, 0))) {
+                sim.startBenchmark();
             }
             
             ImGui::Spacing();

@@ -1,6 +1,8 @@
 #include "SimulationManager.h"
 #include "utils/Logger.h"
 #include <algorithm>
+#include <fstream>
+#include <format>
 
 SimulationManager::SimulationManager() {
     APP_LOG_INFO("Simulation Manager initialized");
@@ -32,6 +34,9 @@ auto SimulationManager::update(float dt) -> void {
         ring->updateNodeMovement(dt, {0,0}); // Infinite bounds
         ring->applyRingFormationForces();
     }
+    
+    if (isBenchmarking) updateBenchmarkLogic(dt);
+    
     PROFILE_END("Sim_Update");
     PROFILE_REPORT();
 }
@@ -149,3 +154,109 @@ auto SimulationManager::onNodeRemoved(int nodeId) -> void {
     }
 }
 
+auto SimulationManager::startBenchmark() -> void {
+    isBenchmarking = true;
+    benchStage = 0;
+    benchTimer = 0.0f;
+    benchSamples = 0;
+    benchAccFPS = 0;
+    benchMinFPS = 9999.0;
+    benchMaxFPS = 0.0;
+    benchAccPhys = 0;
+    benchAccRender = 0;
+    benchResults.clear();
+    
+    if (!rings.empty()) {
+        auto& r = *rings.front();
+        while(r.getNodeCount() > 0) r.removeLastNode();
+    }
+    
+    SetTargetFPS(0); // Unlock FPS for benchmark
+    APP_LOG_INFO("GRADUAL BENCHMARK STARTED");
+}
+
+auto SimulationManager::stopBenchmark() -> void {
+    isBenchmarking = false;
+    SetTargetFPS(60); // Restore cap
+    
+    std::ofstream f("benchmark_results.csv");
+    f << "Nodes,AvgFPS,MinFPS,MaxFPS,Physics(ms),Render(ms)\n";
+    for(const auto& d : benchResults) {
+        f << std::format("{},{:.1f},{:.1f},{:.1f},{:.3f},{:.3f}\n", 
+            d.nodeCount, d.fps, d.minFps, d.maxFps, d.physicsMs, d.renderMs);
+    }
+    f.close();
+    
+    APP_LOG_INFO("BENCHMARK COMPLETE. Results saved to benchmark_results.csv");
+}
+
+auto SimulationManager::getBenchmarkStatus() const -> std::string {
+    if (!isBenchmarking) return "Idle";
+    int nodes = 0;
+    if (!rings.empty()) nodes = rings.front()->getNodeCount();
+    return std::format("Stage {}/20 | Nodes: {}", benchStage, nodes);
+}
+
+auto SimulationManager::updateBenchmarkLogic(float dt) -> void {
+    benchTimer += dt;
+    
+    // Phase 1: Warmup (0s - 3s) - Let physics settle
+    if (benchTimer < 3.0f) return;
+    
+    // Phase 2: Measure (3s - 5s) - Accumulate stats
+    if (benchTimer < 5.0f) {
+        float currentFPS = (float)GetFPS();
+        benchAccFPS += currentFPS;
+        if (currentFPS < benchMinFPS) benchMinFPS = currentFPS;
+        if (currentFPS > benchMaxFPS) benchMaxFPS = currentFPS;
+        
+        benchAccPhys += Profiler::instance().getAverageTime("Sim_Update");
+        benchAccRender += Profiler::instance().getAverageTime("Vis_DrawRing");
+        benchSamples++;
+        return;
+    }
+    
+    // Phase 3: Finalize Step (At 5s)
+    if (!rings.empty()) {
+        BenchmarkData data;
+        data.nodeCount = rings.front()->getNodeCount();
+        
+        if (benchSamples > 0) {
+            data.fps = (float)(benchAccFPS / benchSamples);
+            data.minFps = (float)benchMinFPS;
+            data.maxFps = (float)benchMaxFPS;
+            data.physicsMs = benchAccPhys / benchSamples;
+            data.renderMs = benchAccRender / benchSamples;
+        } else {
+            data.fps = 0; data.minFps = 0; data.maxFps = 0; 
+            data.physicsMs = 0; data.renderMs = 0;
+        }
+        
+        benchResults.push_back(data);
+        
+        APP_LOG_INFO("Bench Stage {}: {} nodes, {:.1f} avg FPS (Min: {:.1f})", benchStage, data.nodeCount, data.fps, data.minFps);
+        
+        if (benchStage >= 20 || data.fps < 10) {
+            stopBenchmark();
+            return;
+        }
+    }
+    
+    // Prepare Next Stage
+    benchStage++;
+    benchTimer = 0.0f;
+    benchSamples = 0;
+    benchAccFPS = 0;
+    benchMinFPS = 9999.0;
+    benchMaxFPS = 0.0;
+    benchAccPhys = 0;
+    benchAccRender = 0;
+    
+    if (rings.empty()) addRing({640,360}, 200);
+    auto& r = *rings.front();
+    for(int i=0; i<100; ++i) {
+        r.addNode(std::format("Bench_{}_{}", benchStage, i));
+        Node& n = r[r.getNodeCount()-1];
+        n.setPosition({(float)GetRandomValue(100, 1180), (float)GetRandomValue(100, 620)});
+    }
+}

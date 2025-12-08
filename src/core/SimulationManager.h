@@ -3,6 +3,7 @@
 #include <vector>
 #include <memory>
 #include <raylib.h>
+#include <string>
 
 class Visualizer;
 
@@ -34,6 +35,20 @@ public:
     auto setPainting(bool enabled) -> void { isPainting = enabled; }
     auto getPainting() const -> bool { return isPainting; }
 
+    // Benchmark System
+    struct BenchmarkData {
+        int nodeCount;
+        float fps;
+        float minFps;
+        float maxFps;
+        double physicsMs;
+        double renderMs;
+    };
+    auto startBenchmark() -> void;
+    auto stopBenchmark() -> void;
+    auto getBenchmarkStatus() const -> std::string;
+    auto isBenchmarkActive() const -> bool { return isBenchmarking; }
+
 private:
     std::vector<std::unique_ptr<Ring>> rings;
     std::vector<int> selectedNodes;
@@ -41,4 +56,19 @@ private:
     int nextRingId{0}; // Counter for unique ring IDs
     bool isPainting{false}; // Painting mode flag
 
+    // Benchmark State
+    bool isBenchmarking{false};
+    float benchTimer{0.0f};
+    int benchStage{0};
+    std::vector<BenchmarkData> benchResults;
+    
+    // Accumulators for precision
+    int benchSamples{0};
+    double benchAccFPS{0.0};
+    double benchMinFPS{9999.0};
+    double benchMaxFPS{0.0};
+    double benchAccPhys{0.0};
+    double benchAccRender{0.0};
+    
+    auto updateBenchmarkLogic(float dt) -> void;
 };
