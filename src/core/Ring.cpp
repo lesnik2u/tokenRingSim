@@ -153,7 +153,7 @@ auto Ring::removeNode(int nodeId) -> void {
                     token->moveToNextNode(nextActiveNode->getId());
                     nextActiveNode->hasToken = true;
                     nodeToRemove->hasToken = false;
-                    // APP_LOG_INFO("Token transferred..."); // Spam
+                    APP_LOG_INFO("Token transferred from node {} to node {}", nodeId, nextActiveNode->getId());
                 } else {
                     token.reset();
                     APP_LOG_INFO("Token invalidated as no other active nodes found after node {}", nodeId);
@@ -243,7 +243,7 @@ auto Ring::update(float dt) -> void {
     }
     
     processMessageQueue(dt);
-    resolveCollisions();
+    // resolveCollisions(); // Moved to updateNodeMovement
 }
 
 auto Ring::reorganizeNodes() -> void {
@@ -258,7 +258,19 @@ auto Ring::findNodeIndexById(int nodeId) const -> int {
 }
 
 auto Ring::updateNodeMovement(float dt, Vector2 bounds) -> void {
-    for (auto &node : nodes) node->moveFreely(dt, bounds);
+    PROFILE_START("Physics_Movement");
+    currentMaxVelocity = 0.0f;
+    for (auto &node : nodes) {
+        node->moveFreely(dt, bounds);
+        float speed = Vector2Length(node->getVelocity());
+        if (speed > currentMaxVelocity) currentMaxVelocity = speed;
+    }
+    
+    PROFILE_START("Physics_Collisions");
+    resolveCollisions();
+    PROFILE_END("Physics_Collisions");
+    
+    PROFILE_END("Physics_Movement");
 }
 
 auto Ring::handleNodeDragging(Vector2 mousePos, bool mousePressed, const Camera2D &camera) -> void {
@@ -308,8 +320,11 @@ auto Ring::resolveCollisions() -> void {
     std::vector<Node*> neighbors; // Optimization: reused buffer
     neighbors.reserve(50);
 
-    // 4 Iterations for stiff collisions
-    for (int iter = 0; iter < 4; ++iter) {
+    // Adaptive iterations based on system energy (max velocity)
+    // If everything is stable (low speed), we don't need aggressive collision checks.
+    int iterations = (currentMaxVelocity < 5.0f) ? 1 : 4;
+
+    for (int iter = 0; iter < iterations; ++iter) {
         for (auto& node : nodes) {
             if (!node->getMobile()) continue;
             
@@ -347,17 +362,20 @@ auto Ring::resolveCollisions() -> void {
 }
 
 auto Ring::applyRingFormationForces() -> void {
-    if (nodes.empty() || !ringFormationEnabled) return;
+    PROFILE_START("Physics_Forces");
+    if (nodes.empty() || !ringFormationEnabled) { PROFILE_END("Physics_Forces"); return; }
 
+    // 1. Build Fast Lookup
     std::unordered_map<int, Node*> nodeMap;
     for (const auto& n : nodes) nodeMap[n->getId()] = n.get();
 
     float breakDist = physics.searchRadius * 1.5f;
     float connectDist = physics.searchRadius;
     
-    std::vector<Node*> candidates; // Optimization: reused buffer
+    std::vector<Node*> candidates; 
     candidates.reserve(100);
 
+    PROFILE_START("Forces_Pass1");
     // --- Pass 1: Maintenance & Basic Formation ---
     for (auto &node : nodes) {
         if (!node->getMobile()) continue;
@@ -392,6 +410,9 @@ auto Ring::applyRingFormationForces() -> void {
                 if(alreadyBonded) continue;
                 if (other->getNeighbors().size() >= 2) continue;
 
+                // Prevent bonding if either is already oversize (Stop reconnection loops)
+                if (node->getClusterSize() > maxClusterSize || other->getClusterSize() > maxClusterSize) continue;
+
                 if (node->getClusterId() != -1 && other->getClusterId() != -1 && node->getClusterId() != other->getClusterId()) {
                      if (node->getClusterSize() + other->getClusterSize() > maxClusterSize) continue;
                 }
@@ -411,8 +432,10 @@ auto Ring::applyRingFormationForces() -> void {
             }
         }
     }
+    PROFILE_END("Forces_Pass1");
 
-    // --- Pass 2: Identify Clusters ---
+    PROFILE_START("Forces_Pass2_BFS");
+    // --- Pass 2: Identify Clusters & Ends ---
     std::unordered_map<int, int> clusterSizes;
     std::unordered_map<int, std::vector<Node*>> clusterEnds; 
     int nextClusterId = 0;
@@ -456,13 +479,16 @@ auto Ring::applyRingFormationForces() -> void {
         if(cid != -1) node->setClusterSize(clusterSizes[cid]);
         else node->setClusterSize(1);
     }
+    PROFILE_END("Forces_Pass2_BFS");
 
+    PROFILE_START("Forces_Pass3_Split");
     // --- Pass 3: Topology Adjustments ---
     for (auto &node : nodes) {
         if (!node->getMobile()) continue;
         int cid = node->getClusterId();
         int csize = (cid != -1) ? clusterSizes[cid] : 1;
         
+        // Split if too big
         if (csize > maxClusterSize) {
             if (node->getNeighbors().size() >= 2) {
                 if (GetRandomValue(0, 100) < 5) { 
@@ -473,6 +499,7 @@ auto Ring::applyRingFormationForces() -> void {
             }
         }
         
+        // Insert if room available
         if (csize < maxClusterSize && node->getNeighbors().size() == 2) {
             Vector2 pos = node->getPosition();
             spatialGrid.query(pos, physics.idealDist * 0.6f, candidates);
@@ -487,7 +514,9 @@ auto Ring::applyRingFormationForces() -> void {
             }
         }
     }
+    PROFILE_END("Forces_Pass3_Split");
 
+    PROFILE_START("Forces_Pass4_Calc");
     // --- Pass 4: Forces ---
     for (auto &node : nodes) {
         if (!node->getMobile()) continue;
@@ -576,6 +605,8 @@ auto Ring::applyRingFormationForces() -> void {
         node->applyForce(force);
         node->setVelocity(Vector2Scale(node->getVelocity(), physics.friction));
     }
+    PROFILE_END("Forces_Pass4_Calc");
+    PROFILE_END("Physics_Forces");
 }
 
 auto Ring::processMessageQueue(float dt) -> void {

@@ -1,4 +1,5 @@
 #include "graphics/Visualizer.h"
+#include "utils/Logger.h"
 #include <cmath>
 #include <algorithm>
 #include <unordered_map>
@@ -63,6 +64,7 @@ void Visualizer::drawRingGlow(const Ring &ring) {
 }
 
 void Visualizer::drawRing(const Ring &ring, float dt) {
+    PROFILE_START("Vis_DrawRing");
     animationTime += dt;
 
     drawConnections(ring);
@@ -109,6 +111,7 @@ void Visualizer::drawRing(const Ring &ring, float dt) {
         // Visualizer should just draw it at `node->getPosition()` if `hasToken`.
         // `drawNode` handles `hasToken`.
     }
+    PROFILE_END("Vis_DrawRing");
 }
 
 void Visualizer::drawNode(const Node &node, bool hasToken) {

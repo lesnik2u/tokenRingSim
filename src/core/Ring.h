@@ -32,6 +32,7 @@ private:
     int ringId{-1}; // Unique ID for this ring, set by SimulationManager
     SimulationManager* simulationManager_ = nullptr; // Raw pointer to SimulationManager
     SpatialGrid spatialGrid{100.0f}; // Spatial grid for optimized neighbor queries
+    float currentMaxVelocity{0.0f}; // Track max velocity for adaptive physics
 
 public:
     // Emergent Simulation Parameters
