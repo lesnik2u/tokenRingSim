@@ -33,6 +33,7 @@ private:
     SimulationManager* simulationManager_ = nullptr; // Raw pointer to SimulationManager
     SpatialGrid spatialGrid{100.0f}; // Spatial grid for optimized neighbor queries
     float currentMaxVelocity{0.0f}; // Track max velocity for adaptive physics
+    std::unordered_map<int, Node*> nodeIdMap; // Fast lookup O(1)
 
 public:
     // Emergent Simulation Parameters
