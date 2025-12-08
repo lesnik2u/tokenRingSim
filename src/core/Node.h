@@ -3,6 +3,7 @@
 #include <memory>
 #include <raylib.h>
 #include <vector>
+#include <unordered_map>
 #include "Data.h"
 
 class Ring;
@@ -85,12 +86,31 @@ public:
 
     // Emergent Topology
     std::vector<Node*> neighbors;
-    auto clearNeighbors() -> void { neighbors.clear(); }
-    auto addNeighbor(Node* node) -> void { neighbors.push_back(node); }
+    std::unordered_map<Node*, int> bondAges; // Track bond stability
+
+    auto clearNeighbors() -> void { 
+        neighbors.clear(); 
+        bondAges.clear();
+    }
+    auto addNeighbor(Node* node) -> void { 
+        neighbors.push_back(node); 
+        bondAges[node] = 0;
+    }
     auto removeNeighbor(Node* node) -> void { 
         std::erase(neighbors, node); 
+        bondAges.erase(node);
     }
     auto getNeighbors() const -> const std::vector<Node*>& { return neighbors; }
+    
+    auto incrementBondAges() -> void {
+        for (auto& [node, age] : bondAges) {
+            age++;
+        }
+    }
+    auto getBondAge(Node* node) const -> int {
+        if (bondAges.find(node) != bondAges.end()) return bondAges.at(node);
+        return 0;
+    }
 
     // Cluster/Ring ID for logic
     int clusterId = -1;
