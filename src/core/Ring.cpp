@@ -12,6 +12,7 @@
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
+#include <limits>
 
 Ring::Ring(Vector2 center, float radius) : center(center), radius(radius) {
     APP_LOG_INFO("Ring created at ({}, {}) with radius {}", center.x, center.y, radius);
@@ -119,6 +120,7 @@ auto Ring::addNode(std::string name) -> void {
     
     assignTokenRanges();
     repartitionData();
+    currentMaxVelocity = 10.0f; // Force grid update
 }
 
 auto Ring::removeLastNode() -> void {
@@ -208,9 +210,11 @@ auto Ring::spawnToken() -> void {
 }
 
 auto Ring::update(float dt) -> void {
-    spatialGrid.clear();
-    for (const auto& node : nodes) {
-        spatialGrid.insert(node.get());
+    if (currentMaxVelocity > 0.1f) {
+        spatialGrid.clear();
+        for (const auto& node : nodes) {
+            spatialGrid.insert(node.get());
+        }
     }
 
     if (!token || nodes.empty()) return;
@@ -361,17 +365,37 @@ auto Ring::sortNodesAngularly() -> void {
     for (auto& cluster : clusters) {
         if (cluster.size() < 3) continue;
 
-        // Calc Center
-        Vector2 center = {0,0};
-        for(Node* n : cluster) center = Vector2Add(center, n->getPosition());
-        center = Vector2Scale(center, 1.0f / cluster.size());
-
-        // Sort by Angle
-        std::sort(cluster.begin(), cluster.end(), [center](Node* a, Node* b) {
-            float angA = std::atan2(a->getPosition().y - center.y, a->getPosition().x - center.x);
-            float angB = std::atan2(b->getPosition().y - center.y, b->getPosition().x - center.x);
-            return angA < angB;
-        });
+        // Sort by Nearest Neighbor (TSP Heuristic)
+        std::vector<Node*> sorted;
+        sorted.reserve(cluster.size());
+        std::unordered_set<Node*> used;
+        
+        Node* curr = cluster[0]; 
+        sorted.push_back(curr);
+        used.insert(curr);
+        
+        while(sorted.size() < cluster.size()) {
+            float minDist = std::numeric_limits<float>::max();
+            Node* best = nullptr;
+            
+            for(Node* candidate : cluster) {
+                if(used.count(candidate)) continue;
+                float d = Vector2Distance(curr->getPosition(), candidate->getPosition());
+                if (d < minDist) {
+                    minDist = d;
+                    best = candidate;
+                }
+            }
+            
+            if (best) {
+                curr = best;
+                sorted.push_back(curr);
+                used.insert(curr);
+            } else {
+                break; 
+            }
+        }
+        cluster = sorted;
 
         // Re-Link
         for(Node* n : cluster) n->clearNeighbors();
@@ -386,7 +410,7 @@ auto Ring::sortNodesAngularly() -> void {
     
     assignTokenRanges();
     repartitionData();
-    APP_LOG_INFO("Sorted {} disjoint ring(s).", sortedCount);
+    APP_LOG_INFO("Sorted {} disjoint ring(s) using Nearest Neighbor.", sortedCount);
 }
 
 auto Ring::calculateRingCenter() -> Vector2 {
