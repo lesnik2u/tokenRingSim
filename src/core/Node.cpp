@@ -80,6 +80,15 @@ auto Node::removeData(const std::string& key) -> void {
     }
 }
 
+auto Node::clearData() -> std::vector<std::unique_ptr<DataItem>> {
+    std::vector<std::unique_ptr<DataItem>> extracted;
+    extracted.reserve(storedData.size());
+    for(auto& item : storedData) extracted.push_back(std::move(item));
+    storedData.clear();
+    dataIndex.clear();
+    return extracted;
+}
+
 auto Node::hasData(const std::string& key) -> bool {
     return dataIndex.find(key) != dataIndex.end();
 }

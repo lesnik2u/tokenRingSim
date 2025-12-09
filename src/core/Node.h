@@ -60,6 +60,7 @@ public:
 
     auto addData(std::unique_ptr<DataItem> data) -> void;
     auto removeData(const std::string &key) -> void;
+    auto clearData() -> std::vector<std::unique_ptr<DataItem>>; // Extract all data and clear index
     auto hasData(const std::string &key) -> bool;
     auto getData(const std::string &key) -> DataItem*; // O(1) Access
     auto getDataCount() const -> size_t { return storedData.size(); }

@@ -24,7 +24,6 @@ private:
     int replicationFactor{3}; // Default replication factor
 
     auto reorganizeNodes() -> void;
-    auto findNodeIndexById(int nodeId) const -> int; // Returns -1 if not found
 
     bool ringFormationEnabled{true};
 
@@ -34,6 +33,14 @@ private:
     SpatialGrid spatialGrid{100.0f}; // Spatial grid for optimized neighbor queries
     float currentMaxVelocity{10.0f}; // Track max velocity for adaptive physics
     std::unordered_map<int, Node*> nodeIdMap; // Fast lookup O(1)
+    bool topologyDirty{true}; // Optimization: Only re-run BFS if topology changes
+    
+    // Cached Cluster Data
+    std::unordered_map<int, int> clusterSizes;
+    std::unordered_map<int, std::vector<Node*>> clusterEnds; 
+    float timeSinceLastSteal{0.0f}; // Cooldown for stealing to prevent flickering
+    bool spatialGridDirty{true}; // Optimization: Rebuild grid only when nodes move
+    std::vector<Node*> scratchBuffer; // Reusable buffer for physics queries
 
 public:
     // Emergent Simulation Parameters
