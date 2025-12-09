@@ -88,7 +88,7 @@ public:
     auto shouldReorganize() const -> bool;
     auto reorganizeFromPositions() -> void;
 
-    auto applyRingFormationForces() -> void;
+    auto applyRingFormationForces(float dt) -> void;
     auto resolveCollisions() -> void; // Hard collision resolution
     auto calculateRingCenter() -> Vector2;
 

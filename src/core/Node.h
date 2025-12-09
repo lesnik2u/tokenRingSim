@@ -18,7 +18,11 @@ private:
     bool isMobile{false};
     bool activeStatus{true}; // Nodes are active by default
     bool isSelected{false};
+    
+    // Data storage - Dual structure for iteration and fast lookup
     std::vector<std::unique_ptr<DataItem>> storedData;
+    std::unordered_map<std::string, DataItem*> dataIndex;
+    
     int tokenRangeStart{0}; // Angle in degrees
     int tokenRangeEnd{0};
 
@@ -33,7 +37,7 @@ public:
     auto getPosition() const -> Vector2 { return position; }
     auto getAngle() const -> float { return angle; }
     auto hasTokenPresent() const -> bool { return hasToken; }
-    
+
     // Optimized accessor
     auto getName() const -> const std::string& { return name; }
 
@@ -51,12 +55,13 @@ public:
     auto moveFreely(float dt, Vector2 bounds) -> void;
     auto toString() const -> std::string override;
 
-    auto applyForce(Vector2 force) -> void;
+    auto applyForce(Vector2 force, float dt) -> void;
     auto resetForces() -> void;
 
     auto addData(std::unique_ptr<DataItem> data) -> void;
     auto removeData(const std::string &key) -> void;
     auto hasData(const std::string &key) -> bool;
+    auto getData(const std::string &key) -> DataItem*; // O(1) Access
     auto getDataCount() const -> size_t { return storedData.size(); }
     auto getStoredData() const -> const std::vector<std::unique_ptr<DataItem>> & {
         return storedData;

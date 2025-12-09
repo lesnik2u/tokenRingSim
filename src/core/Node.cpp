@@ -27,16 +27,6 @@ auto Node::moveFreely(float dt, Vector2 bounds) -> void {
 
     position.x += velocity.x * dt;
     position.y += velocity.y * dt;
-
-    // No boundary checks, nodes can roam freely with panning/zooming
-    // if (position.x < 50 || position.x > bounds.x - 50) {
-    //     velocity.x = -velocity.x;
-    //     position.x = std::clamp(position.x, 50.0f, bounds.x - 50.0f);
-    // }
-    // if (position.y < 50 || position.y > bounds.y - 50) {
-    //     velocity.y = -velocity.y;
-    //     position.y = std::clamp(position.y, 50.0f, bounds.y - 50.0f);
-    // }
 }
 
 auto Node::setAngle(float newAngle) -> void {
@@ -53,15 +43,18 @@ auto Node::toString() const -> std::string {
                        id, name, angle, hasToken);
 }
 
-auto Node::applyForce(Vector2 force) -> void {
-    velocity.x += force.x * 0.016f;  // Assuming 60fps, smooth integration
-    velocity.y += force.y * 0.016f;
+auto Node::applyForce(Vector2 force, float dt) -> void {
+    velocity.x += force.x * dt;
+    velocity.y += force.y * dt;
 
-    // Max speed cap
-    float speed = sqrt(velocity.x * velocity.x + velocity.y * velocity.y);
-    if (speed > 1000.0f) {  // Increased max speed
-        velocity.x = (velocity.x / speed) * 1000.0f;
-        velocity.y = (velocity.y / speed) * 1000.0f;
+    // Max speed cap (optimized)
+    float speedSq = velocity.x * velocity.x + velocity.y * velocity.y;
+    const float maxSpeed = 1000.0f;
+    if (speedSq > maxSpeed * maxSpeed) {
+        float speed = sqrt(speedSq);
+        float scale = maxSpeed / speed;
+        velocity.x *= scale;
+        velocity.y *= scale;
     }
 }
 auto Node::resetForces() -> void {
@@ -71,24 +64,29 @@ auto Node::resetForces() -> void {
 #include "Data.h"
 
 auto Node::addData(std::unique_ptr<DataItem> data) -> void {
+    dataIndex[data->getKey()] = data.get();
     storedData.push_back(std::move(data));
 }
 
 auto Node::removeData(const std::string& key) -> void {
-    storedData.erase(
-        std::remove_if(storedData.begin(), storedData.end(),
-            [&key](const std::unique_ptr<DataItem>& item) {
-                return item->getKey() == key;
-            }),
-        storedData.end()
-    );
+    if (dataIndex.erase(key)) {
+        storedData.erase(
+            std::remove_if(storedData.begin(), storedData.end(),
+                [&key](const std::unique_ptr<DataItem>& item) {
+                    return item->getKey() == key;
+                }),
+            storedData.end()
+        );
+    }
 }
 
 auto Node::hasData(const std::string& key) -> bool {
-    return std::any_of(storedData.begin(), storedData.end(),
-        [&key](const std::unique_ptr<DataItem>& item) {
-            return item->getKey() == key;
-        });
+    return dataIndex.find(key) != dataIndex.end();
+}
+
+auto Node::getData(const std::string& key) -> DataItem* {
+    auto it = dataIndex.find(key);
+    return (it != dataIndex.end()) ? it->second : nullptr;
 }
 
 auto Node::receiveMessage(RoutingMessage message) -> std::pair<bool, std::unique_ptr<RoutingMessage>> {

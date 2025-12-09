@@ -11,7 +11,15 @@ public:
     SpatialGrid(float cellSize) : cellSize(cellSize) {}
 
     void clear() {
-        grid.clear();
+        if (++clearCounter > 100) {
+            grid.clear(); // Prune empty cells occasionally
+            clearCounter = 0;
+        } else {
+            // Keep memory allocated, just clear content
+            for (auto& kv : grid) {
+                kv.second.clear();
+            }
+        }
     }
 
     void insert(Node* node) {
@@ -35,7 +43,10 @@ public:
                 int key = hash(x, y);
                 auto it = grid.find(key);
                 if (it != grid.end()) {
-                    results.insert(results.end(), it->second.begin(), it->second.end());
+                    const auto& cell = it->second;
+                    if (!cell.empty()) {
+                        results.insert(results.end(), cell.begin(), cell.end());
+                    }
                 }
             }
         }
@@ -44,11 +55,10 @@ public:
 private:
     float cellSize;
     std::unordered_map<int, std::vector<Node*>> grid;
+    int clearCounter = 0;
 
     // Simple hash function for 2D coordinates
     int hash(int x, int y) const {
-        // Use a prime number based hash to reduce collisions
-        // Assumes map coordinates won't exceed typical int ranges
         return x * 73856093 ^ y * 19349663;
     }
 };

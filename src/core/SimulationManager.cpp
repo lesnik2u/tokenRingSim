@@ -32,7 +32,7 @@ auto SimulationManager::update(float dt) -> void {
     for (auto& ring : rings) {
         ring->update(dt);
         ring->updateNodeMovement(dt, {0,0}); // Infinite bounds
-        ring->applyRingFormationForces();
+        ring->applyRingFormationForces(dt);
     }
     
     if (isBenchmarking) updateBenchmarkLogic(dt);

@@ -24,20 +24,25 @@ Ring::Ring(const Ring &other)
         newNode->updatePosition(center, radius);
         nodes.push_back(std::move(newNode));
     }
+    
+    // Rebuild lookup map
+    nodeIdMap.clear();
+    for (const auto& node : nodes) {
+        nodeIdMap[node->getId()] = node.get();
+    }
+
     if (other.token) {
         token = std::make_unique<Token>(other.token->getId());
         token->moveToNextNode(other.token->getCurrentNodeId());
-        for (auto &node : nodes) {
-            if (node->getId() == token->getCurrentNodeId()) {
-                node->hasToken = true;
-            }
+        if (nodeIdMap.count(token->getCurrentNodeId())) {
+            nodeIdMap[token->getCurrentNodeId()]->hasToken = true;
         }
     }
 }
 
 Ring::Ring(Ring &&other) noexcept
     : nodes(std::move(other.nodes)), token(std::move(other.token)), center(other.center),
-      radius(other.radius), nextNodeId(other.nextNodeId) {}
+      radius(other.radius), nextNodeId(other.nextNodeId), nodeIdMap(std::move(other.nodeIdMap)) {}
 
 auto Ring::operator=(const Ring &other) -> Ring & {
     if (this != &other) {
@@ -47,6 +52,7 @@ auto Ring::operator=(const Ring &other) -> Ring & {
         center = temp.center;
         radius = temp.radius;
         nextNodeId = temp.nextNodeId;
+        std::swap(nodeIdMap, temp.nodeIdMap);
     }
     return *this;
 }
@@ -58,6 +64,7 @@ auto Ring::operator=(Ring &&other) noexcept -> Ring & {
         center = other.center;
         radius = other.radius;
         nextNodeId = other.nextNodeId;
+        nodeIdMap = std::move(other.nodeIdMap);
     }
     return *this;
 }
@@ -69,8 +76,12 @@ auto Ring::operator+=(std::string nodeName) -> Ring & {
 
 auto Ring::operator-=(std::string_view nodeName) -> Ring & {
     auto it =
-        std::remove_if(nodes.begin(), nodes.end(), [nodeName](const std::unique_ptr<Node> &node) {
-            return node->getName() == nodeName;
+        std::remove_if(nodes.begin(), nodes.end(), [nodeName, this](const std::unique_ptr<Node> &node) {
+            if (node->getName() == nodeName) {
+                nodeIdMap.erase(node->getId());
+                return true;
+            }
+            return false;
         });
 
     if (it != nodes.end()) {
@@ -100,7 +111,11 @@ auto Ring::addNode(std::string name) -> void {
     auto node = std::make_unique<Node>(nextNodeId++, std::move(name), 0.0f);
     node->setMobile(true);
     APP_LOG_DEBUG("Adding node: id={}, name={}", node->getId(), node->getName());
+    
+    Node* ptr = node.get();
     nodes.push_back(std::move(node));
+    nodeIdMap[ptr->getId()] = ptr;
+    
     assignTokenRanges();
     repartitionData();
 }
@@ -109,14 +124,14 @@ auto Ring::removeLastNode() -> void {
     if (nodes.empty()) return;
     Node* node = nodes.back().get();
     
-    // Cleanup neighbors before deletion
     for (Node* neighbor : node->getNeighbors()) {
         neighbor->removeNeighbor(node);
     }
     
     APP_LOG_DEBUG("Removing node: {}", node->getName());
+    nodeIdMap.erase(node->getId());
     repartitionData();
-    if (simulationManager_) simulationManager_->onNodeRemoved(nodes.back()->getId());
+    if (simulationManager_) simulationManager_->onNodeRemoved(node->getId());
     nodes.pop_back();
     assignTokenRanges();
 }
@@ -129,7 +144,6 @@ auto Ring::removeNode(int nodeId) -> void {
     if (it != nodes.end()) {
         Node* nodeToRemove = it->get();
         
-        // Important: Remove myself from my neighbors' lists to avoid dangling pointers
         for (Node* neighbor : nodeToRemove->getNeighbors()) {
             neighbor->removeNeighbor(nodeToRemove);
         }
@@ -143,43 +157,33 @@ auto Ring::removeNode(int nodeId) -> void {
         );
         
         if (token && nodeToRemove->getId() == token->getCurrentNodeId()) {
-            size_t currentIdx = std::distance(nodes.begin(), it);
-            if (nodes.size() > 1) {
-                size_t nextIdx = (currentIdx + 1) % nodes.size();
-                auto search_token_it = std::next(it);
-                if (search_token_it == nodes.end()) search_token_it = nodes.begin();
+            Node* nextActiveNode = nullptr;
+            if (!nodeToRemove->getNeighbors().empty()) {
+                nextActiveNode = nodeToRemove->getNeighbors()[0];
+            }
+            
+            // Fallback scan
+            if (!nextActiveNode) {
+                 for(auto& n : nodes) {
+                     if(n->getId() != nodeId) { nextActiveNode = n.get(); break; }
+                 }
+            }
 
-                Node* nextActiveNode = nullptr;
-                bool foundNextActive = false;
-                auto start_search_token_it = search_token_it;
-                do {
-                    if (search_token_it->get()->isActive() && search_token_it->get()->getId() != nodeToRemove->getId()) {
-                        nextActiveNode = search_token_it->get();
-                        foundNextActive = true;
-                        break;
-                    }
-                    std::advance(search_token_it, 1);
-                    if (search_token_it == nodes.end()) search_token_it = nodes.begin();
-                } while (search_token_it != start_search_token_it);
-
-                if (foundNextActive && nextActiveNode) {
-                    token->moveToNextNode(nextActiveNode->getId());
-                    nextActiveNode->hasToken = true;
-                    nodeToRemove->hasToken = false;
-                    APP_LOG_INFO("Token transferred from node {} to node {}", nodeId, nextActiveNode->getId());
-                } else {
-                    token.reset();
-                    APP_LOG_INFO("Token invalidated as no other active nodes found after node {}", nodeId);
-                }
+            if (nextActiveNode) {
+                token->moveToNextNode(nextActiveNode->getId());
+                nextActiveNode->hasToken = true;
+                nodeToRemove->hasToken = false;
+                APP_LOG_INFO("Token transferred from node {} to node {}", nodeId, nextActiveNode->getId());
             } else {
                 token.reset();
-                APP_LOG_INFO("Token invalidated as the last node {} is removed", nodeId);
+                APP_LOG_INFO("Token invalidated");
             }
         }
         
         assignTokenRanges();
         repartitionData();
 
+        nodeIdMap.erase(nodeId);
         if (simulationManager_) simulationManager_->onNodeRemoved(nodeId);
         nodes.erase(it);
         assignTokenRanges();
@@ -218,12 +222,8 @@ auto Ring::update(float dt) -> void {
     if (token->getTravelProgress() >= 1.0f) {
         int currentId = token->getCurrentNodeId();
         Node* currentNode = nullptr;
-        for(auto& n : nodes) {
-            if(n->getId() == currentId) {
-                currentNode = n.get();
-                break;
-            }
-        }
+        
+        if (nodeIdMap.count(currentId)) currentNode = nodeIdMap[currentId];
 
         if (currentNode) {
             currentNode->hasToken = false;
@@ -245,12 +245,8 @@ auto Ring::update(float dt) -> void {
 
             token->moveToNextNode(nextNodeId);
             Node* nextNode = nullptr;
-            for(auto& n : nodes) {
-                if(n->getId() == nextNodeId) {
-                    nextNode = n.get();
-                    break;
-                }
-            }
+            if (nodeIdMap.count(nextNodeId)) nextNode = nodeIdMap[nextNodeId];
+            
             if (nextNode) nextNode->hasToken = true;
         }
     }
@@ -326,10 +322,10 @@ auto Ring::calculateRingCenter() -> Vector2 {
 }
 
 auto Ring::resolveCollisions() -> void {
-    float radius = 30.0f; // Visual radius
+    float radius = 30.0f; 
     float diameter = radius * 2.0f;
     
-    std::vector<Node*> neighbors; // Optimization: reused buffer
+    std::vector<Node*> neighbors; 
     neighbors.reserve(50);
 
     int iterations = (currentMaxVelocity < 5.0f) ? 1 : 4;
@@ -358,9 +354,7 @@ auto Ring::resolveCollisions() -> void {
                         dir = Vector2Subtract(pos, otherPos);
                         dir = Vector2Normalize(dir);
                     }
-
                     float overlap = diameter - d;
-                    
                     Vector2 push = Vector2Scale(dir, overlap * 0.5f);
                     node->setPosition(Vector2Add(pos, push));
                     other->setPosition(Vector2Subtract(otherPos, push));
@@ -371,11 +365,11 @@ auto Ring::resolveCollisions() -> void {
     }
 }
 
-auto Ring::applyRingFormationForces() -> void {
+auto Ring::applyRingFormationForces(float dt) -> void {
     PROFILE_START("Physics_Forces");
     if (nodes.empty() || !ringFormationEnabled) { PROFILE_END("Physics_Forces"); return; }
 
-    float breakDist = physics.searchRadius * 2.0f; // Stable hysteresis (2x search)
+    float breakDist = physics.searchRadius * 2.0f;
     float connectDist = physics.searchRadius * 0.8f;
     
     std::vector<Node*> candidates; 
@@ -387,15 +381,15 @@ auto Ring::applyRingFormationForces() -> void {
         if (!node->getMobile()) continue;
         Vector2 pos = node->getPosition();
 
-        // A. Maintenance: Only break if really far or old
+        // A. Maintenance
         std::vector<Node*> currentNeighbors = node->getNeighbors();
         for (Node* other : currentNeighbors) {
             float dist = Vector2Distance(pos, other->getPosition());
             bool shouldBreak = false;
             
             int age = node->getBondAge(other);
-            if (dist > breakDist && age > 60) shouldBreak = true; // Break only stable bonds if stretched
-            if (dist > breakDist * 2.0f) shouldBreak = true; // Emergency snap
+            if (dist > breakDist && age > 60) shouldBreak = true; 
+            if (dist > breakDist * 2.0f) shouldBreak = true;
             
             if (shouldBreak) {
                 APP_LOG_DEBUG("Bond broken (dist): {} <-> {}", node->getId(), other->getId());
@@ -404,7 +398,7 @@ auto Ring::applyRingFormationForces() -> void {
             }
         }
 
-        // B. Formation: Only add if slots open and stable
+        // B. Formation
         if (node->getNeighbors().size() < 2) {
             spatialGrid.query(pos, connectDist, candidates);
             
@@ -423,13 +417,18 @@ auto Ring::applyRingFormationForces() -> void {
                 // Deterministic: Only lower ID connects
                 if (node->getId() > other->getId()) continue;
 
-                // Oversize check: don't form bonds if cluster oversize
-                if (node->getClusterSize() > maxClusterSize || other->getClusterSize() > maxClusterSize) continue;
-
-                // Merge check
-                if (node->getClusterId() != -1 && other->getClusterId() != -1 && node->getClusterId() != other->getClusterId()) {
-                     if (node->getClusterSize() + other->getClusterSize() > maxClusterSize) continue;
+                // Check Future Cluster Size: Prevent growth if it would exceed limit
+                int mySize = (node->getClusterId() != -1) ? node->getClusterSize() : 1;
+                int otherSize = (other->getClusterId() != -1) ? other->getClusterSize() : 1;
+                int combinedSize = (node->getClusterId() == other->getClusterId()) ? mySize : mySize + otherSize;
+                
+                // If same cluster, we are closing a loop (size doesn't change). OK.
+                // If different cluster, we are merging. Check size limit.
+                if (node->getClusterId() != other->getClusterId()) {
+                    if (combinedSize > maxClusterSize) continue;
                 }
+                // If I am already oversize, don't add links (shed mode)
+                if (mySize > maxClusterSize) continue;
 
                 float d = Vector2Distance(pos, other->getPosition());
                 if (d < connectDist) sorted.push_back({d, other});
@@ -453,7 +452,6 @@ auto Ring::applyRingFormationForces() -> void {
     for (auto& node : nodes) node->incrementBondAges();
 
     PROFILE_START("Forces_Pass2_BFS");
-    // --- Pass 2: Identify Clusters & Ends ---
     std::unordered_map<int, int> clusterSizes;
     std::unordered_map<int, std::vector<Node*>> clusterEnds; 
     int nextClusterId = 0;
@@ -497,33 +495,27 @@ auto Ring::applyRingFormationForces() -> void {
     PROFILE_END("Forces_Pass2_BFS");
 
     PROFILE_START("Forces_Pass3_Split");
-    // --- Pass 3: Topology Adjustments (Split) ---
-    // Only perform if system is stable to avoid flickering
-    if (currentMaxVelocity < 20.0f) { 
-        for (auto &node : nodes) {
-            if (!node->getMobile()) continue;
-            int cid = node->getClusterId();
-            int csize = (cid != -1) ? clusterSizes[cid] : 1;
-            
-            // Split if too big
-            if (csize > maxClusterSize * 1.3f) { // Grace buffer
-                if (node->getNeighbors().size() >= 2) {
-                    if (GetRandomValue(0, 100) < 2) { // Low chance
-                        Node* target = node->getNeighbors()[0];
-                        APP_LOG_DEBUG("Bond broken (split): {} <-> {}", node->getId(), target->getId());
-                        node->removeNeighbor(target);
-                        target->removeNeighbor(node.get());
-                    }
+    for (auto &node : nodes) {
+        if (!node->getMobile()) continue;
+        int cid = node->getClusterId();
+        int csize = (cid != -1) ? clusterSizes[cid] : 1;
+        
+        // Split
+        if (csize > maxClusterSize) {
+            if (node->getNeighbors().size() >= 2) {
+                if (GetRandomValue(0, 100) < 10) { // 10% chance to break if oversize
+                    Node* target = node->getNeighbors()[0];
+                    APP_LOG_DEBUG("Bond broken (split): {} <-> {}", node->getId(), target->getId());
+                    node->removeNeighbor(target);
+                    target->removeNeighbor(node.get());
                 }
             }
-            
-            // Insert logic removed to prevent flickering
         }
+        // Insert removed to prevent flickering
     }
     PROFILE_END("Forces_Pass3_Split");
 
     PROFILE_START("Forces_Pass4_Calc");
-    // --- Pass 4: Forces ---
     for (auto &node : nodes) {
         if (!node->getMobile()) continue;
         Vector2 pos = node->getPosition();
@@ -531,7 +523,8 @@ auto Ring::applyRingFormationForces() -> void {
 
         const auto& bondedIds = node->getNeighbors();
         int myCluster = node->getClusterId();
-        
+        int myClusterSize = (myCluster != -1) ? clusterSizes[myCluster] : 1;
+
         // End-to-End Attraction
         if (bondedIds.size() == 1 && myCluster != -1) {
             const auto& ends = clusterEnds[myCluster];
@@ -561,7 +554,7 @@ auto Ring::applyRingFormationForces() -> void {
             force = Vector2Add(force, Vector2Scale(tangent, physics.vortexStrength));
         }
 
-        // Non-Bonded Repulsion
+        // Non-Bonded Repulsion & Merge
         spatialGrid.query(pos, physics.searchRadius, candidates);
         for (Node* other : candidates) {
             if (other == node.get()) continue;
@@ -578,12 +571,13 @@ auto Ring::applyRingFormationForces() -> void {
             bool shouldMerge = false;
             
             if (myCluster != otherCluster) {
-                if (node->getClusterSize() + otherSize <= maxClusterSize) shouldMerge = true;
+                if (myClusterSize + otherSize <= maxClusterSize) shouldMerge = true;
             }
 
             if (shouldMerge) {
                 if (d < physics.searchRadius) {
-                    force = Vector2Add(force, Vector2Scale(dir, physics.chainAttractStrength * 0.5f));
+                    // Attract to merge (stronger than before)
+                    force = Vector2Add(force, Vector2Scale(dir, physics.chainAttractStrength * 2.0f));
                 }
             } else {
                 if (d < physics.idealDist * 1.5f) { 
@@ -593,7 +587,7 @@ auto Ring::applyRingFormationForces() -> void {
             }
         }
 
-        node->applyForce(force);
+        node->applyForce(force, dt); // Fixed: pass dt
         node->setVelocity(Vector2Scale(node->getVelocity(), physics.friction));
     }
     PROFILE_END("Forces_Pass4_Calc");
@@ -605,10 +599,9 @@ auto Ring::processMessageQueue(float dt) -> void {
         it->progress += dt * 2.0f;
         Node* start = nullptr; 
         Node* end = nullptr;
-        for(auto& n : nodes) {
-            if(n->getId() == it->currentNodeId) start = n.get();
-            if(n->getId() == it->targetNodeId) end = n.get();
-        }
+        if (nodeIdMap.count(it->currentNodeId)) start = nodeIdMap[it->currentNodeId];
+        if (nodeIdMap.count(it->targetNodeId)) end = nodeIdMap[it->targetNodeId];
+
         if (!start || !end) {
             it = messageQueue.erase(it);
             continue;
@@ -623,7 +616,7 @@ auto Ring::processMessageQueue(float dt) -> void {
             Node* targetNode = end;
             auto [accepted, forwardMsg] = targetNode->receiveMessage(std::move(*it->content));
             if (accepted) {
-                // APP_LOG_INFO("Message delivered..."); // Reduced spam
+                // APP_LOG_INFO("Message delivered..."); 
                 it = messageQueue.erase(it);
             } else {
                 auto msg = std::move(forwardMsg);
@@ -696,22 +689,20 @@ auto Ring::forceRepartitionWithVisualization() -> void {
 
 auto Ring::getSelectedNode() const -> Node* {
     if (selectedNodeId == -1) return nullptr;
-    for (const auto& node : nodes) {
-        if (node->getId() == selectedNodeId) return node.get();
-    }
+    if (nodeIdMap.count(selectedNodeId)) return nodeIdMap.at(selectedNodeId);
     return nullptr;
 }
 
 auto Ring::getNextNode(int currentNodeId) -> Node* {
     Node* current = nullptr;
-    for(auto& n : nodes) if(n->getId() == currentNodeId) current = n.get();
+    if (nodeIdMap.count(currentNodeId)) current = nodeIdMap.at(currentNodeId);
     
     if (!current) return nullptr;
     
     const auto& neighbors = current->getNeighbors();
     if (neighbors.empty()) return current;
-    int nextId = neighbors[0]->getId(); // Using ID from Node*
-    for(auto& n : nodes) if(n->getId() == nextId) return n.get();
+    int nextId = neighbors[0]->getId();
+    if (nodeIdMap.count(nextId)) return nodeIdMap.at(nextId);
     return nullptr;
 }
 
@@ -743,12 +734,13 @@ auto Ring::insertData(std::string key, std::string value) -> void {
         return;
     }
     int primaryOwnerNodeId = primaryOwner->getId();
-    int primaryOwnerIndex = findNodeIndexById(primaryOwnerNodeId);
-    if (primaryOwnerIndex == -1) {
-        APP_LOG_ERROR("Primary owner node not found for replication: {}", primaryOwnerNodeId);
+    Node* currentNode = nodeIdMap.count(primaryOwnerNodeId) ? nodeIdMap.at(primaryOwnerNodeId) : nullptr;
+    
+    if (!currentNode) {
+        APP_LOG_ERROR("Primary owner node not found in map: {}", primaryOwnerNodeId);
         return;
     }
-    Node* currentNode = nodes[primaryOwnerIndex].get();
+
     for (int i = 1; i < currentRF; ++i) {
         Node* nextNode = getNextNode(currentNode->getId());
         if (!nextNode || nextNode == currentNode) break;
@@ -768,7 +760,7 @@ auto Ring::insertData(std::string key, std::string value) -> void {
 
 auto Ring::routeMessage(int startNodeId, std::unique_ptr<Node::RoutingMessage> msg) -> void {
     Node* current = nullptr;
-    for(auto& n : nodes) if(n->getId() == startNodeId) current = n.get();
+    if (nodeIdMap.count(startNodeId)) current = nodeIdMap.at(startNodeId);
     if(!current) return;
     Node* next = getNextNode(startNodeId);
     if (next == current || !next) {
