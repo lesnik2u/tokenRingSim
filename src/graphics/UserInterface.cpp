@@ -157,6 +157,10 @@ auto UserInterface::renderNetworkController() -> void {
                     worldRing.removeLastNode();
                 }
             }
+            
+            if (ImGui::Button("Sort Topology", ImVec2(-1, 0))) {
+                worldRing.sortNodesAngularly();
+            }
 
             ImGui::Spacing();
             ImGui::Separator();

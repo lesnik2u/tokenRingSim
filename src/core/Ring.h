@@ -87,6 +87,7 @@ public:
 
     auto shouldReorganize() const -> bool;
     auto reorganizeFromPositions() -> void;
+    auto sortNodesAngularly() -> void; // Sorts nodes by angle around centroid
 
     auto applyRingFormationForces(float dt) -> void;
     auto resolveCollisions() -> void; // Hard collision resolution
