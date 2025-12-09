@@ -41,6 +41,9 @@ private:
     float timeSinceLastSteal{0.0f}; // Cooldown for stealing to prevent flickering
     bool spatialGridDirty{true}; // Optimization: Rebuild grid only when nodes move
     std::vector<Node*> scratchBuffer; // Reusable buffer for physics queries
+    
+    float sortingTimer{0.0f};
+    float sortingInterval{0.2f};
 
 public:
     // Emergent Simulation Parameters

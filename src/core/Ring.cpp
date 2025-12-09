@@ -221,6 +221,12 @@ auto Ring::spawnToken() -> void {
 
 auto Ring::update(float dt) -> void {
     timeSinceLastSteal += dt;
+    sortingTimer += dt;
+    
+    if (sortingTimer >= sortingInterval) {
+        reorganizeFromPositions();
+        sortingTimer = 0.0f;
+    }
 
     if (!token || nodes.empty()) return;
 
@@ -334,7 +340,6 @@ auto Ring::sortNodesAngularly() -> void {
 
     // 1. Group by Cluster ID (Reuse existing topology info)
     std::map<int, std::vector<Node*>> clusterGroups;
-    bool anyValidCluster = false;
 
     for (auto& node : nodes) {
         int cid = node->getClusterId();
@@ -345,70 +350,42 @@ auto Ring::sortNodesAngularly() -> void {
     for (auto& [cid, cluster] : clusterGroups) {
         if (cluster.size() < 3) continue;
 
-        // Sort by Nearest Neighbor (TSP Heuristic)
-        std::vector<Node*> sorted;
-        sorted.reserve(cluster.size());
-        std::unordered_set<Node*> used;
-        std::unordered_set<Node*> clusterSet(cluster.begin(), cluster.end());
-
-        Node* curr = cluster[0];
-        sorted.push_back(curr);
-        used.insert(curr);
-
-        std::vector<Node*> gridResults;
-        gridResults.reserve(50);
-
-        while(sorted.size() < cluster.size()) {
-            float minDist = std::numeric_limits<float>::max();
-            Node* best = nullptr;
-
-            // Optimization: Try Spatial Grid first
-            spatialGrid.query(curr->getPosition(), 500.0f, gridResults);
-
-            for(Node* candidate : gridResults) {
-                if(used.count(candidate) || !clusterSet.count(candidate)) continue;
-                float d = Vector2Distance(curr->getPosition(), candidate->getPosition());
-                if (d < minDist) {
-                    minDist = d;
-                    best = candidate;
-                }
-            }
-
-            // Fallback to linear scan if grid failed
-            if (!best) {
-                for(Node* candidate : cluster) {
-                    if(used.count(candidate)) continue;
-                    float d = Vector2Distance(curr->getPosition(), candidate->getPosition());
-                    if (d < minDist) {
-                        minDist = d;
-                        best = candidate;
-                    }
-                }
-            }
-
-            if (best) {
-                curr = best;
-                sorted.push_back(curr);
-                used.insert(curr);
-            } else {
-                break;
-            }
+        // Calculate Centroid
+        Vector2 centroid = {0, 0};
+        for (Node* n : cluster) {
+            centroid = Vector2Add(centroid, n->getPosition());
         }
+        centroid = Vector2Scale(centroid, 1.0f / cluster.size());
+
+        // Sort by Angle around Centroid
+        std::sort(cluster.begin(), cluster.end(), [centroid](Node* a, Node* b) {
+            float angA = std::atan2(a->getPosition().y - centroid.y, a->getPosition().x - centroid.x);
+            float angB = std::atan2(b->getPosition().y - centroid.y, b->getPosition().x - centroid.x);
+            return angA < angB;
+        });
 
         // Re-Link
-        for(Node* n : sorted) n->clearNeighbors();
-        for(size_t i=0; i<sorted.size(); ++i) {
-            Node* c = sorted[i];
-            Node* n = sorted[(i+1) % sorted.size()];
-            c->addNeighbor(n);
-            n->addNeighbor(c);
+        float breakThreshold = physics.searchRadius * 2.0f;
+        for(Node* n : cluster) n->clearNeighbors();
+        for(size_t i=0; i<cluster.size(); ++i) {
+            Node* c = cluster[i];
+            Node* n = cluster[(i+1) % cluster.size()];
+            
+            // Only connect if within physical limits.
+            // This prevents the Sorter from creating "infinite" bonds that ignore Search Radius.
+            if (Vector2Distance(c->getPosition(), n->getPosition()) < breakThreshold) {
+                c->addNeighbor(n);
+                n->addNeighbor(c);
+            }
         }
         sortedCount++;
     }
 
-    topologyDirty = true;
-    repartitionData();
-    APP_LOG_INFO("Sorted {} disjoint ring(s) using Nearest Neighbor.", sortedCount);
+    if (sortedCount > 0) {
+        topologyDirty = true;
+        repartitionData();
+        // APP_LOG_INFO("Sorted {} disjoint ring(s) using Angular Sort.", sortedCount);
+    }
 }
 
 auto Ring::calculateRingCenter() -> Vector2 {
@@ -716,6 +693,66 @@ auto Ring::applyRingFormationForces(float dt) -> void {
     }
     EndMerge:;
     PROFILE_END("Forces_Pass3b_Merge");
+
+    PROFILE_START("Forces_Pass3c_RingSwallow");
+    // Attempt to merge disjoint closed rings (Swallow mechanics)
+    if (GetRandomValue(0, 100) < 10) { // Throttle frequency
+        for (auto& node : nodes) {
+            if (!node->getMobile()) continue;
+            if (node->getNeighbors().size() != 2) continue; // Must be in a ring (or middle of chain)
+
+            int myC = node->getClusterId();
+            int mySize = (myC != -1) ? node->getClusterSize() : 1;
+            if (mySize >= maxClusterSize) continue; // I am already full
+
+            Vector2 pos = node->getPosition();
+            scratchBuffer.clear();
+            spatialGrid.query(pos, physics.searchRadius * 0.8f, scratchBuffer); 
+
+            for(Node* other : scratchBuffer) {
+                if(other == node.get()) continue;
+                if(other->getNeighbors().size() != 2) continue; // Target must also be in a ring
+
+                int otherC = other->getClusterId();
+                if(myC == -1 || otherC == -1 || myC == otherC) continue;
+
+                int otherSize = (otherC != -1) ? other->getClusterSize() : 1;
+
+                // Rule: Bigger swallows smaller (or equal). 
+                // We strictly enforce mySize >= otherSize to define the predator.
+                if (mySize < otherSize) continue; 
+
+                // Rule: Cap Check
+                if (mySize + otherSize > maxClusterSize) continue;
+
+                // Perform Swallow (Bridge Merge)
+                // Break a bond on both sides and stitch them together
+                
+                Node* bondA = node->getNeighbors()[0];
+                Node* bondB = other->getNeighbors()[0];
+
+                // 1. Break old bonds
+                node->removeNeighbor(bondA);
+                bondA->removeNeighbor(node.get());
+
+                other->removeNeighbor(bondB);
+                bondB->removeNeighbor(other);
+
+                // 2. Form new cross bonds (The Bridge)
+                node->addNeighbor(other);
+                other->addNeighbor(node.get());
+
+                bondA->addNeighbor(bondB);
+                bondB->addNeighbor(bondA);
+
+                topologyDirty = true;
+                APP_LOG_INFO("Ring Swallow: Cluster {} (Size {}) swallowed Cluster {} (Size {})", myC, mySize, otherC, otherSize);
+                goto EndSwallow; 
+            }
+        }
+    }
+    EndSwallow:;
+    PROFILE_END("Forces_Pass3c_RingSwallow");
 
     PROFILE_START("Forces_Pass4_Calc");
     for (auto &node : nodes) {
