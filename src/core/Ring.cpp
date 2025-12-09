@@ -11,6 +11,7 @@
 #include <utility>
 #include <queue>
 #include <unordered_map>
+#include <unordered_set>
 
 Ring::Ring(Vector2 center, float radius) : center(center), radius(radius) {
     APP_LOG_INFO("Ring created at ({}, {}) with radius {}", center.x, center.y, radius);
@@ -316,36 +317,76 @@ auto Ring::reorganizeFromPositions() -> void {
 auto Ring::sortNodesAngularly() -> void {
     if (nodes.empty()) return;
 
-    Vector2 center = calculateRingCenter();
+    // 1. Identify Connected Components (Clusters)
+    std::vector<std::vector<Node*>> clusters;
+    std::unordered_set<Node*> visited;
 
-    // Sort nodes based on angle relative to center
-    std::sort(nodes.begin(), nodes.end(), [center](const std::unique_ptr<Node>& a, const std::unique_ptr<Node>& b) {
-        float angA = std::atan2(a->getPosition().y - center.y, a->getPosition().x - center.x);
-        float angB = std::atan2(b->getPosition().y - center.y, b->getPosition().x - center.x);
-        return angA < angB;
-    });
+    for (auto& nodePtr : nodes) {
+        Node* startNode = nodePtr.get();
+        if (visited.count(startNode)) continue;
 
-    // Rebuild Map and Connections
-    nodeIdMap.clear();
-    for (auto& node : nodes) {
-        node->clearNeighbors();
-        nodeIdMap[node->getId()] = node.get();
+        std::vector<Node*> cluster;
+        std::queue<Node*> q;
+        q.push(startNode);
+        visited.insert(startNode);
+        cluster.push_back(startNode);
+
+        while(!q.empty()){
+            Node* curr = q.front();
+            q.pop();
+            for(Node* n : curr->getNeighbors()) {
+                if (visited.find(n) == visited.end()) {
+                    visited.insert(n);
+                    cluster.push_back(n);
+                    q.push(n);
+                }
+            }
+        }
+        clusters.push_back(cluster);
     }
 
-    // Form Ring
-    if (nodes.size() > 1) {
-        for (size_t i = 0; i < nodes.size(); ++i) {
-            Node* curr = nodes[i].get();
-            Node* next = nodes[(i + 1) % nodes.size()].get();
-            
+    // Fallback: If all isolated (no topology), merge all into one ring
+    bool allIsolated = true;
+    for(const auto& c : clusters) if(c.size() > 1) { allIsolated = false; break; }
+    
+    if (allIsolated && nodes.size() >= 3) {
+        clusters.clear();
+        std::vector<Node*> all;
+        for(auto& n : nodes) all.push_back(n.get());
+        clusters.push_back(all);
+    }
+
+    // 2. Process Each Cluster
+    int sortedCount = 0;
+    for (auto& cluster : clusters) {
+        if (cluster.size() < 3) continue;
+
+        // Calc Center
+        Vector2 center = {0,0};
+        for(Node* n : cluster) center = Vector2Add(center, n->getPosition());
+        center = Vector2Scale(center, 1.0f / cluster.size());
+
+        // Sort by Angle
+        std::sort(cluster.begin(), cluster.end(), [center](Node* a, Node* b) {
+            float angA = std::atan2(a->getPosition().y - center.y, a->getPosition().x - center.x);
+            float angB = std::atan2(b->getPosition().y - center.y, b->getPosition().x - center.x);
+            return angA < angB;
+        });
+
+        // Re-Link
+        for(Node* n : cluster) n->clearNeighbors();
+        for(size_t i=0; i<cluster.size(); ++i) {
+            Node* curr = cluster[i];
+            Node* next = cluster[(i+1) % cluster.size()];
             curr->addNeighbor(next);
             next->addNeighbor(curr);
         }
+        sortedCount++;
     }
     
     assignTokenRanges();
     repartitionData();
-    APP_LOG_INFO("Ring topology sorted angularly.");
+    APP_LOG_INFO("Sorted {} disjoint ring(s).", sortedCount);
 }
 
 auto Ring::calculateRingCenter() -> Vector2 {
