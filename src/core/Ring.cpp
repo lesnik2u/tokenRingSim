@@ -365,7 +365,7 @@ auto Ring::sortNodesAngularly() -> void {
         });
 
         // Re-Link
-        float breakThreshold = physics.searchRadius * 2.0f;
+        float breakThreshold = physics.searchRadius * 1.1f; // Tighter threshold to prevent cross-map jumps
         for(Node* n : cluster) n->clearNeighbors();
         for(size_t i=0; i<cluster.size(); ++i) {
             Node* c = cluster[i];
@@ -459,7 +459,7 @@ auto Ring::applyRingFormationForces(float dt) -> void {
 
             int age = node->getBondAge(other);
             if (dist > breakDist && age > 60) shouldBreak = true;
-            if (dist > breakDist * 2.0f) shouldBreak = true;
+            if (dist > breakDist * 1.2f) shouldBreak = true; // Stricter maintenance
 
             if (shouldBreak) {
                 APP_LOG_DEBUG("Bond broken (dist): {} <-> {}", node->getId(), other->getId());
@@ -667,6 +667,9 @@ auto Ring::applyRingFormationForces(float dt) -> void {
                 if(other == node.get()) continue;
                 if(other->getNeighbors().size() < 2) continue;
                 
+                // Explicit distance check to handle loose grid queries
+                if (Vector2Distance(pos, other->getPosition()) > physics.searchRadius) continue;
+
                 int myC = node->getClusterId();
                 int otherC = other->getClusterId();
                 if(myC == -1 || otherC == -1 || myC == otherC) continue;
@@ -712,6 +715,9 @@ auto Ring::applyRingFormationForces(float dt) -> void {
             for(Node* other : scratchBuffer) {
                 if(other == node.get()) continue;
                 if(other->getNeighbors().size() != 2) continue; // Target must also be in a ring
+
+                // Explicit distance check
+                if (Vector2Distance(pos, other->getPosition()) > physics.searchRadius * 0.8f) continue;
 
                 int otherC = other->getClusterId();
                 if(myC == -1 || otherC == -1 || myC == otherC) continue;
