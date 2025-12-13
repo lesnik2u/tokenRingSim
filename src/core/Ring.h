@@ -51,8 +51,14 @@ private:
     float sortingTimer{0.0f};
     float sortingInterval{0.2f};
 
+    // Encapsulated Topology State Management
     auto markClusterDirty(int id) -> void {
-        if (id != -1) dirtyClusters.insert(id);
+        if (id != -1 && !topologyDirty) dirtyClusters.insert(id);
+    }
+
+    auto markTopologyDirty() -> void {
+        topologyDirty = true;
+        dirtyClusters.clear(); // Full rebuild supersedes partial updates
     }
 
 public:

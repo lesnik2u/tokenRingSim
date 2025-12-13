@@ -41,13 +41,13 @@ Ring::Ring(const Ring &other)
             nodeIdMap[token->getCurrentNodeId()]->hasToken = true;
         }
     }
-    topologyDirty = true;
+    markTopologyDirty();
 }
 
 Ring::Ring(Ring &&other) noexcept
     : nodes(std::move(other.nodes)), token(std::move(other.token)), center(other.center),
       radius(other.radius), nextNodeId(other.nextNodeId), nodeIdMap(std::move(other.nodeIdMap)) {
-          topologyDirty = true;
+          markTopologyDirty();
 }
 
 auto Ring::operator=(const Ring &other) -> Ring & {
@@ -59,7 +59,7 @@ auto Ring::operator=(const Ring &other) -> Ring & {
         radius = temp.radius;
         nextNodeId = temp.nextNodeId;
         std::swap(nodeIdMap, temp.nodeIdMap);
-        topologyDirty = true;
+        markTopologyDirty();
     }
     return *this;
 }
@@ -72,7 +72,7 @@ auto Ring::operator=(Ring &&other) noexcept -> Ring & {
         radius = other.radius;
         nextNodeId = other.nextNodeId;
         nodeIdMap = std::move(other.nodeIdMap);
-        topologyDirty = true;
+        markTopologyDirty();
     }
     return *this;
 }
@@ -94,7 +94,7 @@ auto Ring::operator-=(std::string_view nodeName) -> Ring & {
 
     if (it != nodes.end()) {
         nodes.erase(it, nodes.end());
-        topologyDirty = true;
+        markTopologyDirty();
         reorganizeNodes();
     }
     return *this;
@@ -124,7 +124,7 @@ auto Ring::addNode(std::string name) -> void {
     Node* ptr = node.get();
     nodes.push_back(std::move(node));
     nodeIdMap[ptr->getId()] = ptr;
-        topologyDirty = true;
+        markTopologyDirty();
         
         repartitionData();
         spatialGridDirty = true; 
@@ -164,7 +164,7 @@ auto Ring::removeLastNode() -> void {
 
     if (simulationManager_) simulationManager_->onNodeRemoved(nodes.back()->getId());
     nodes.pop_back();
-    topologyDirty = true;
+    markTopologyDirty();
 
     if (!nodes.empty()) {
         for(auto& d : orphans) nodes[0]->addData(std::move(d));
@@ -217,7 +217,7 @@ auto Ring::removeNode(int nodeId) -> void {
         nodeIdMap.erase(nodeId);
         if (simulationManager_) simulationManager_->onNodeRemoved(nodeId);
         nodes.erase(it);
-        topologyDirty = true;
+        markTopologyDirty();
 
         if (!nodes.empty()) {
             for(auto& d : orphans) nodes[0]->addData(std::move(d));
@@ -412,7 +412,7 @@ auto Ring::sortNodesAngularly() -> void {
     }
 
     if (sortedCount > 0) {
-        topologyDirty = true;
+        markTopologyDirty();
         repartitionData();
         // APP_LOG_INFO("Sorted {} disjoint ring(s) using Angular Sort.", sortedCount);
     }
@@ -452,7 +452,7 @@ auto Ring::resolveCollisions() -> void {
                         dir = Vector2Normalize(dir);
                     } else {
                         dir = Vector2Subtract(pos, otherPos);
-                        dir = Vector2Normalize(dir);
+                        dir = Vector2Scale(dir, 1.0f / d);
                     }
                     float overlap = diameter - d;
                     Vector2 push = Vector2Scale(dir, overlap * 0.5f);
@@ -474,7 +474,7 @@ auto Ring::applyRingFormationForces(float dt) -> void {
         
         scratchBuffer.clear();
         std::vector<Node*>& candidates = scratchBuffer;
-        candidates.reserve(100);
+        if (candidates.capacity() < nodes.size()) candidates.reserve(nodes.size());
     
         PROFILE_START("Forces_Pass1");    // --- Pass 1: Maintenance & Basic Formation ---
     for (auto &node : nodes) {
@@ -486,6 +486,15 @@ auto Ring::applyRingFormationForces(float dt) -> void {
         for (Node* other : currentNeighbors) {
             float dist = Vector2Distance(pos, other->getPosition());
             bool shouldBreak = false;
+
+            // Stress-based Age Logic
+            // Only age the bond if it is stretched beyond comfort.
+            // If it returns to a comfortable distance, reset age (grace period).
+            if (dist > physics.idealDist * 1.1f) {
+                node->incrementBondAge(other);
+            } else {
+                node->resetBondAge(other);
+            }
 
             int age = node->getBondAge(other);
             if (dist > breakDist && age > 60) shouldBreak = true;
@@ -548,7 +557,8 @@ auto Ring::applyRingFormationForces(float dt) -> void {
     }
     PROFILE_END("Forces_Pass1");
 
-    for (auto& node : nodes) node->incrementBondAges();
+    // Replacement for global increment: Manage bond age based on stress
+    // for (auto& node : nodes) node->incrementBondAges(); // REMOVED
 
     PROFILE_START("Forces_Pass2_BFS");
     if (topologyDirty) {
@@ -700,18 +710,25 @@ auto Ring::applyRingFormationForces(float dt) -> void {
 
                             for (Node* intruder : candidates) {
 
-                                if (intruder == node.get()) continue;                        int mySize = (node->getClusterId() != -1) ? node->getClusterSize() : 1;
-                        int otherSize = (intruder->getClusterId() != -1) ? intruder->getClusterSize() : 1;
-                        bool isIsolated = intruder->getNeighbors().empty();
-                        bool canSteal = isIsolated;
+                                if (intruder == node.get()) continue;
+                                int mySize = (node->getClusterId() != -1) ? node->getClusterSize() : 1;
+                                int otherSize = (intruder->getClusterId() != -1) ? intruder->getClusterSize() : 1;
+                                
+                                // Rule: Max-sized clusters are immune to theft
+                                if (otherSize >= maxClusterSize) continue;
+
+                                bool isIsolated = intruder->getNeighbors().empty();
+                                bool canSteal = isIsolated;
                         
-                        if (!isIsolated) {
-                            if (mySize >= otherSize * 3 && otherSize <= 2) {
-                                if (node->getClusterId() != intruder->getClusterId()) canSteal = true;
-                            }
-                        }
+                                if (!isIsolated) {
+                                    // Rule: Smaller rings cannot steal from bigger ones.
+                                    // Hierarchy: Stealer must be strictly larger than victim.
+                                    if (mySize > otherSize) {
+                                        if (node->getClusterId() != intruder->getClusterId()) canSteal = true;
+                                    }
+                                }
                         
-                        if (!canSteal) continue;
+                                if (!canSteal) continue;
         
                                         // Smart Target Selection: Break bond with neighbor closest to intruder
                                         Node* n1 = node->getNeighbors()[0];
@@ -776,7 +793,8 @@ auto Ring::applyRingFormationForces(float dt) -> void {
                 int totalSize = node->getClusterSize() + other->getClusterSize();
                 if(totalSize > maxClusterSize) continue;
                 
-                if(GetRandomValue(0, 100) > 1) continue; 
+                // Increased probability (15%) to prevent starvation
+                if(GetRandomValue(0, 100) > 15) continue; 
                 
                 Node* myBond = node->getNeighbors()[0];
                 Node* otherBond = other->getNeighbors()[0];
@@ -829,7 +847,18 @@ auto Ring::applyRingFormationForces(float dt) -> void {
                 if (mySize < otherSize) continue; 
 
                 // Rule: Cap Check
-                if (mySize + otherSize > maxClusterSize) continue;
+                if (mySize + otherSize > maxClusterSize) {
+                    // Alternative: If we are too big to swallow whole, but we are dominantly larger,
+                    // we "shatter" the smaller ring to make it vulnerable to piece-meal stealing.
+                    if (mySize > otherSize && otherSize > 1) {
+                         Node* victimBond = other->getNeighbors()[0];
+                         other->removeNeighbor(victimBond);
+                         victimBond->removeNeighbor(other);
+                         markClusterDirty(other->getClusterId());
+                         APP_LOG_INFO("Ring Shatter: Cluster {} (Size {}) shattered Cluster {} (Size {})", myC, mySize, otherC, otherSize);
+                    }
+                    continue;
+                }
 
                 // Perform Swallow (Bridge Merge)
                 // Break a bond on both sides and stitch them together
@@ -889,7 +918,8 @@ auto Ring::applyRingFormationForces(float dt) -> void {
         for (Node* other : bondedIds) {
             Vector2 dir = Vector2Subtract(other->getPosition(), pos);
             float dist = Vector2Length(dir);
-            dir = Vector2Normalize(dir);
+            if (dist > 0.0001f) dir = Vector2Scale(dir, 1.0f / dist);
+            else dir = {0, 0};
 
             float delta = dist - physics.idealDist;
             float k = (delta > 0) ? physics.chainAttractStrength : physics.repulsionStrength;
@@ -907,9 +937,11 @@ auto Ring::applyRingFormationForces(float dt) -> void {
             for(Node* n : bondedIds) if(n == other) isBonded = true;
             if (isBonded) continue;
 
-            float d = Vector2Distance(pos, other->getPosition());
-            Vector2 dir = Vector2Subtract(other->getPosition(), pos);
-            dir = Vector2Normalize(dir);
+            Vector2 diff = Vector2Subtract(other->getPosition(), pos);
+            float d = Vector2Length(diff);
+            Vector2 dir;
+            if (d > 0.0001f) dir = Vector2Scale(diff, 1.0f / d);
+            else dir = {0, 0};
 
             int otherCluster = other->getClusterId();
             int otherSize = (otherCluster != -1) ? other->getClusterSize() : 1;
@@ -1062,13 +1094,18 @@ auto Ring::getNextNode(int currentNodeId) -> Node* {
 
 auto Ring::insertData(std::string key, std::string value) -> void {
     if (nodes.empty()) return;
-    std::string keyCopy = key;
-    std::string valueCopy = value;
+
+    // Use shared pointers to share string data across primary and replicas
+    auto sharedKey = std::make_shared<std::string>(std::move(key));
+    auto sharedValue = std::make_shared<std::string>(std::move(value));
+
     int startNodeIdx = GetRandomValue(0, static_cast<int>(nodes.size()) - 1);
     Node* startNode = nodes[startNodeIdx].get();
-    auto data = std::make_unique<DataItem>(std::move(key), std::move(value));
+    
+    auto data = std::make_unique<DataItem>(sharedKey, sharedValue);
     int hash = data->getHash();
-    APP_LOG_INFO("Client request: Insert '{}' (hash={}°) -> Node '{}'", keyCopy, hash, startNode->getName());
+    
+    APP_LOG_INFO("Client request: Insert '{}' (hash={}°) -> Node '{}'", *sharedKey, hash, startNode->getName());
     auto msg = std::make_unique<Node::RoutingMessage>();
     msg->data = std::move(data);
     msg->targetHash = hash;
@@ -1076,7 +1113,7 @@ auto Ring::insertData(std::string key, std::string value) -> void {
     msg->ttl = static_cast<int>(nodes.size()) * 2;
     auto [accepted, forwardMsg] = startNode->receiveMessage(std::move(*msg));
     if (accepted) {
-        APP_LOG_INFO("Data '{}' stored immediately at Node '{}'", keyCopy, startNode->getName());
+        APP_LOG_INFO("Data '{}' stored immediately at Node '{}'", *sharedKey, startNode->getName());
     } else {
         routeMessage(startNode->getId(), std::move(forwardMsg));
     }
@@ -1099,7 +1136,8 @@ auto Ring::insertData(std::string key, std::string value) -> void {
         Node* nextNode = getNextNode(currentNode->getId());
         if (!nextNode || nextNode == currentNode) break;
 
-        auto replicaData = std::make_unique<DataItem>(keyCopy, valueCopy, true);
+        // Zero-copy string replication
+        auto replicaData = std::make_unique<DataItem>(sharedKey, sharedValue, true);
         auto replicaMsg = std::make_unique<Node::RoutingMessage>();
         replicaMsg->data = std::move(replicaData);
         replicaMsg->targetHash = hash;
@@ -1107,7 +1145,7 @@ auto Ring::insertData(std::string key, std::string value) -> void {
         replicaMsg->ttl = static_cast<int>(nodes.size()) * 2;
 
         routeMessage(currentNode->getId(), std::move(replicaMsg));
-        APP_LOG_INFO("Replicating '{}' to Node '{}' (hop {})", keyCopy, nextNode->getName(), i);
+        APP_LOG_INFO("Replicating '{}' to Node '{}' (hop {})", *sharedKey, nextNode->getName(), i);
         currentNode = nextNode;
     }
 }

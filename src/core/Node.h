@@ -108,11 +108,18 @@ public:
     }
     auto getNeighbors() const -> const std::vector<Node*>& { return neighbors; }
     
-    auto incrementBondAges() -> void {
-        for (auto& [node, age] : bondAges) {
-            age++;
+    auto incrementBondAge(Node* neighbor) -> void {
+        if (bondAges.find(neighbor) != bondAges.end()) {
+            bondAges[neighbor]++;
         }
     }
+    
+    auto resetBondAge(Node* neighbor) -> void {
+        if (bondAges.find(neighbor) != bondAges.end()) {
+            bondAges[neighbor] = 0;
+        }
+    }
+
     auto getBondAge(Node* node) const -> int {
         if (bondAges.find(node) != bondAges.end()) return bondAges.at(node);
         return 0;
