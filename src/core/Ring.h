@@ -5,6 +5,8 @@
 #include <memory>
 #include <raylib.h>
 #include <vector>
+#include <unordered_set>
+#include <set>
 #include "graphics/Visualizer.h"
 #include "utils/Logger.h"
 
@@ -38,12 +40,20 @@ private:
     // Cached Cluster Data
     std::unordered_map<int, int> clusterSizes;
     std::unordered_map<int, std::vector<Node*>> clusterEnds; 
+    std::unordered_set<int> dirtyClusters; // Track clusters needing update
+    std::set<int> freeClusterIds; // Recyclable IDs for stable colors
+    int globalNextClusterId{0}; // Persistent ID counter for stable incremental updates
+
     float timeSinceLastSteal{0.0f}; // Cooldown for stealing to prevent flickering
     bool spatialGridDirty{true}; // Optimization: Rebuild grid only when nodes move
     std::vector<Node*> scratchBuffer; // Reusable buffer for physics queries
     
     float sortingTimer{0.0f};
     float sortingInterval{0.2f};
+
+    auto markClusterDirty(int id) -> void {
+        if (id != -1) dirtyClusters.insert(id);
+    }
 
 public:
     // Emergent Simulation Parameters

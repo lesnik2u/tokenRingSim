@@ -149,11 +149,22 @@ public:
             logFile.flush();
         }
     }
+
+    template<typename... Args>
+    auto warn(std::format_string<Args...> fmt, Args&&... args) -> void {
+        std::string message = std::format("[{}] WARN: ", getTimestamp()) + std::format(fmt, std::forward<Args>(args)...);
+        std::cerr << message << "\n"; // Warnings also to stderr
+        if (logFile.is_open()) {
+            logFile << message << "\n";
+            logFile.flush();
+        }
+    }
 };
 
 #define APP_LOG_INFO(...) Logger::instance().info(__VA_ARGS__)
 #define APP_LOG_DEBUG(...) Logger::instance().debug(__VA_ARGS__)
 #define APP_LOG_ERROR(...) Logger::instance().error(__VA_ARGS__)
+#define APP_LOG_WARN(...) Logger::instance().warn(__VA_ARGS__)
 
 #define PROFILE_START(name) Profiler::instance().start(name)
 #define PROFILE_END(name) Profiler::instance().end(name)

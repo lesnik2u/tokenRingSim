@@ -12,6 +12,7 @@
 #include <queue>
 #include <unordered_map>
 #include <unordered_set>
+#include <set>
 #include <limits>
 
 Ring::Ring(Vector2 center, float radius) : center(center), radius(radius) {
@@ -141,6 +142,24 @@ auto Ring::removeLastNode() -> void {
     // Save data
     std::vector<std::unique_ptr<DataItem>> orphans = node->clearData();
 
+    // Handle Token
+    if (token && node->getId() == token->getCurrentNodeId()) {
+        Node* nextActiveNode = nullptr;
+        if (nodes.size() > 1) {
+            nextActiveNode = nodes[nodes.size() - 2].get(); // The new last node
+        }
+        
+        if (nextActiveNode) {
+            token->moveToNextNode(nextActiveNode->getId());
+            nextActiveNode->hasToken = true;
+            node->hasToken = false;
+            APP_LOG_INFO("Token transferred from removed last node {} to node {}", node->getId(), nextActiveNode->getId());
+        } else {
+            token.reset();
+            APP_LOG_INFO("Token invalidated (last node removed)");
+        }
+    }
+
     nodeIdMap.erase(node->getId());
 
     if (simulationManager_) simulationManager_->onNodeRemoved(nodes.back()->getId());
@@ -150,6 +169,11 @@ auto Ring::removeLastNode() -> void {
     if (!nodes.empty()) {
         for(auto& d : orphans) nodes[0]->addData(std::move(d));
         repartitionData();
+    }
+
+    if (!token && !nodes.empty()) {
+        spawnToken();
+        APP_LOG_INFO("New token spawned after last node removal.");
     }
 }
 
@@ -263,6 +287,11 @@ auto Ring::update(float dt) -> void {
             if (nodeIdMap.count(nextNodeId)) nextNode = nodeIdMap[nextNodeId];
 
             if (nextNode) nextNode->hasToken = true;
+        } else {
+            // Token is stranded on a deleted node.
+            APP_LOG_WARN("Token stranded on non-existent node {}. Respawning.", currentId);
+            token.reset();
+            spawnToken();
         }
     }
 
@@ -282,7 +311,8 @@ auto Ring::updateNodeMovement(float dt, Vector2 bounds) -> void {
         if (speed > currentMaxVelocity) currentMaxVelocity = speed;
     }
 
-    if (currentMaxVelocity > 0.1f) spatialGridDirty = true;
+    // Always mark dirty to prevent stale grid data during collisions
+    spatialGridDirty = true;
 
     if (spatialGridDirty) {
         spatialGrid.clear();
@@ -465,7 +495,7 @@ auto Ring::applyRingFormationForces(float dt) -> void {
                 APP_LOG_DEBUG("Bond broken (dist): {} <-> {}", node->getId(), other->getId());
                 node->removeNeighbor(other);
                 other->removeNeighbor(node.get());
-                topologyDirty = true;
+                markClusterDirty(node->getClusterId());
             }
         }
 
@@ -510,7 +540,8 @@ auto Ring::applyRingFormationForces(float dt) -> void {
                     APP_LOG_DEBUG("Bond formed: {} <-> {}", node->getId(), other->getId());
                     node->addNeighbor(other);
                     other->addNeighbor(node.get());
-                    topologyDirty = true;
+                    markClusterDirty(node->getClusterId());
+                    markClusterDirty(other->getClusterId());
                 }
             }
         }
@@ -521,16 +552,20 @@ auto Ring::applyRingFormationForces(float dt) -> void {
 
     PROFILE_START("Forces_Pass2_BFS");
     if (topologyDirty) {
+        // Full Rebuild
         clusterSizes.clear();
         clusterEnds.clear();
-        int nextClusterId = 0;
-        for (auto& node : nodes) node->setClusterId(-1);
+        dirtyClusters.clear();
+        freeClusterIds.clear();
+        globalNextClusterId = 0; // Reset ID counter for stability
 
+        for (auto& node : nodes) node->setClusterId(-1);
+        
         for (auto& node : nodes) {
             if (!node->getMobile()) continue;
             if (node->getClusterId() != -1) continue;
 
-            int currentCluster = nextClusterId++;
+            int currentCluster = globalNextClusterId++;
             int size = 0;
             std::queue<Node*> q;
             node->setClusterId(currentCluster);
@@ -555,13 +590,76 @@ auto Ring::applyRingFormationForces(float dt) -> void {
             }
             clusterSizes[currentCluster] = size;
         }
-
-        for(auto& node : nodes) {
-            int cid = node->getClusterId();
-            if(cid != -1) node->setClusterSize(clusterSizes[cid]);
-            else node->setClusterSize(1);
-        }
         topologyDirty = false;
+    } else if (!dirtyClusters.empty()) {
+        // Incremental Update
+        std::vector<Node*> affectedNodes;
+        affectedNodes.reserve(nodes.size()); // Worst case
+        
+        // 1. Identify affected nodes and clear old stats
+        for (auto& node : nodes) {
+            int cid = node->getClusterId();
+            if (dirtyClusters.count(cid)) {
+                affectedNodes.push_back(node.get());
+                node->setClusterId(-1);
+            }
+        }
+        
+        // Clear metadata for dirty clusters and recycle IDs
+        for (int cid : dirtyClusters) {
+            clusterSizes.erase(cid);
+            clusterEnds.erase(cid);
+            freeClusterIds.insert(cid); // Recycle this ID
+        }
+        dirtyClusters.clear();
+        
+        // 2. Re-run BFS on affected nodes
+        for (Node* node : affectedNodes) {
+            if (!node->getMobile()) continue;
+            if (node->getClusterId() != -1) continue; // Already handled in this pass
+
+            // Reuse ID if available
+            int currentCluster;
+            if (!freeClusterIds.empty()) {
+                auto it = freeClusterIds.begin();
+                currentCluster = *it;
+                freeClusterIds.erase(it);
+            } else {
+                currentCluster = globalNextClusterId++;
+            }
+
+            int size = 0;
+            std::queue<Node*> q;
+            node->setClusterId(currentCluster);
+            q.push(node);
+            size++;
+
+            while(!q.empty()){
+                Node* curr = q.front();
+                q.pop();
+
+                if (curr->getNeighbors().size() == 1) {
+                    clusterEnds[currentCluster].push_back(curr);
+                }
+
+                for (Node* neighbor : curr->getNeighbors()) {
+                    // Only process neighbors that were also reset (part of the dirty set)
+                    if (neighbor->getClusterId() == -1) {
+                        neighbor->setClusterId(currentCluster);
+                        q.push(neighbor);
+                        size++;
+                    }
+                }
+            }
+            clusterSizes[currentCluster] = size;
+        }
+    }
+
+    // Update individual node sizes (fast pass)
+    for(auto& node : nodes) {
+        int cid = node->getClusterId();
+        if(cid != -1 && clusterSizes.count(cid)) node->setClusterSize(clusterSizes[cid]);
+        else node->setClusterSize(1);
     }
     PROFILE_END("Forces_Pass2_BFS");
 
@@ -579,7 +677,7 @@ auto Ring::applyRingFormationForces(float dt) -> void {
                     APP_LOG_DEBUG("Bond broken (split): {} <-> {}", node->getId(), target->getId());
                     node->removeNeighbor(target);
                     target->removeNeighbor(node.get());
-                    topologyDirty = true;
+                    markClusterDirty(node->getClusterId());
                 }
             }
         }
@@ -648,7 +746,8 @@ auto Ring::applyRingFormationForces(float dt) -> void {
                                         target->addNeighbor(intruder);
                                         intruder->addNeighbor(target);
                         
-                                        topologyDirty = true;
+                                        markClusterDirty(node->getClusterId());
+                                        markClusterDirty(intruder->getClusterId());
                                         timeSinceLastSteal = 0.0f;
                                         break;                    }
                 }    }
@@ -688,7 +787,8 @@ auto Ring::applyRingFormationForces(float dt) -> void {
                 other->removeNeighbor(otherBond);
                 otherBond->removeNeighbor(other);
                 
-                topologyDirty = true;
+                markClusterDirty(node->getClusterId());
+                markClusterDirty(other->getClusterId());
                 APP_LOG_INFO("Initiating merge of clusters (Size {} + {})", node->getClusterSize(), other->getClusterSize());
                 goto EndMerge; 
             }
@@ -751,7 +851,8 @@ auto Ring::applyRingFormationForces(float dt) -> void {
                 bondA->addNeighbor(bondB);
                 bondB->addNeighbor(bondA);
 
-                topologyDirty = true;
+                markClusterDirty(node->getClusterId());
+                markClusterDirty(other->getClusterId());
                 APP_LOG_INFO("Ring Swallow: Cluster {} (Size {}) swallowed Cluster {} (Size {})", myC, mySize, otherC, otherSize);
                 goto EndSwallow; 
             }
