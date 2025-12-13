@@ -1,6 +1,5 @@
 #include "core/Ring.h"
 #include "utils/Logger.h"
-#include "SimulationManager.h"
 #include "graphics/Visualizer.h"
 #include <algorithm>
 #include <map>
@@ -20,7 +19,19 @@ Ring::Ring(Vector2 center, float radius) : center(center), radius(radius) {
 }
 
 Ring::Ring(const Ring &other)
-    : center(other.center), radius(other.radius), nextNodeId(other.nextNodeId) {
+    : center(other.center), radius(other.radius), nextNodeId(other.nextNodeId),
+      replicationFactor(other.replicationFactor),
+      ringFormationEnabled(other.ringFormationEnabled),
+      visualizer(other.visualizer),
+      ringId(other.ringId),
+      onNodeRemovedCallback(other.onNodeRemovedCallback),
+      spatialGrid(other.spatialGrid.getCellSize()), // Assuming constructor takes cell size
+      currentMaxVelocity(other.currentMaxVelocity),
+      timeSinceLastSteal(other.timeSinceLastSteal),
+      sortingTimer(other.sortingTimer),
+      sortingInterval(other.sortingInterval),
+      physics(other.physics),
+      maxClusterSize(other.maxClusterSize) {
     for (const auto &node : other.nodes) {
         auto newNode =
             std::make_unique<Node>(node->getId(), std::string(node->getName()), node->getAngle());
@@ -162,7 +173,7 @@ auto Ring::removeLastNode() -> void {
 
     nodeIdMap.erase(node->getId());
 
-    if (simulationManager_) simulationManager_->onNodeRemoved(nodes.back()->getId());
+    if (onNodeRemovedCallback) onNodeRemovedCallback(nodes.back()->getId());
     nodes.pop_back();
     markTopologyDirty();
 
@@ -215,7 +226,7 @@ auto Ring::removeNode(int nodeId) -> void {
         std::vector<std::unique_ptr<DataItem>> orphans = nodeToRemove->clearData();
 
         nodeIdMap.erase(nodeId);
-        if (simulationManager_) simulationManager_->onNodeRemoved(nodeId);
+        if (onNodeRemovedCallback) onNodeRemovedCallback(nodeId);
         nodes.erase(it);
         markTopologyDirty();
 

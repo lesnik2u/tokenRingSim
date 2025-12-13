@@ -61,4 +61,7 @@ private:
     int hash(int x, int y) const {
         return x * 73856093 ^ y * 19349663;
     }
+
+public:
+    auto getCellSize() const -> float { return cellSize; }
 };

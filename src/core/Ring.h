@@ -7,11 +7,11 @@
 #include <vector>
 #include <unordered_set>
 #include <set>
+#include <functional>
 #include "graphics/Visualizer.h"
 #include "utils/Logger.h"
 
 class Visualizer;
-class SimulationManager;
 
 /**
  * @brief Manages the Distributed Hash Table (DHT) ring.
@@ -31,7 +31,7 @@ private:
 
     Visualizer* visualizer{nullptr};
     int ringId{-1}; // Unique ID for this ring, set by SimulationManager
-    SimulationManager* simulationManager_ = nullptr; // Raw pointer to SimulationManager
+    std::function<void(int)> onNodeRemovedCallback; // Decoupled callback
     SpatialGrid spatialGrid{100.0f}; // Spatial grid for optimized neighbor queries
     float currentMaxVelocity{10.0f}; // Track max velocity for adaptive physics
     std::unordered_map<int, Node*> nodeIdMap; // Fast lookup O(1)
@@ -87,7 +87,7 @@ public:
     ~Ring() = default;
 
     auto setVisualizer(Visualizer* vis) -> void { visualizer = vis; }
-    auto setSimulationManager(SimulationManager* manager) -> void { simulationManager_ = manager; }
+    auto setOnNodeRemovedCallback(std::function<void(int)> callback) -> void { onNodeRemovedCallback = std::move(callback); }
 
     // Operator overloading
     auto operator+=(std::string nodeName) -> Ring &;

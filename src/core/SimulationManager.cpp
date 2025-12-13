@@ -12,7 +12,12 @@ auto SimulationManager::addRing(Vector2 center, float radius) -> Ring& {
     auto ring = std::make_unique<Ring>(center, radius);
     ring->setRingId(nextRingId++); // Assign unique ID using setter
     if (visualizer) ring->setVisualizer(visualizer);
-    ring->setSimulationManager(this); // Set the SimulationManager for the ring
+    
+    // Set callback using lambda
+    ring->setOnNodeRemovedCallback([this](int nodeId) {
+        this->onNodeRemoved(nodeId);
+    });
+
     rings.push_back(std::move(ring));
     return *rings.back();
 }
