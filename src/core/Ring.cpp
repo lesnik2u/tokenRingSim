@@ -432,7 +432,14 @@ auto Ring::resolveCollisions() -> void {
     std::vector<Node*> neighbors;
     neighbors.reserve(50);
 
-    int iterations = (currentMaxVelocity < 5.0f) ? 1 : 4;
+    // Adaptive Iterations based on Kinetic Energy and Density
+    int iterations = 1;
+    if (currentMaxVelocity > 50.0f) iterations = 8;
+    else if (currentMaxVelocity > 20.0f) iterations = 4;
+    else if (currentMaxVelocity > 5.0f) iterations = 2;
+
+    if (nodes.size() > 500) iterations += 2;
+    if (iterations > 10) iterations = 10;
 
     for (int iter = 0; iter < iterations; ++iter) {
         for (auto& node : nodes) {
@@ -469,8 +476,8 @@ auto Ring::applyRingFormationForces(float dt) -> void {
     PROFILE_START("Physics_Forces");
         if (nodes.empty() || !ringFormationEnabled) { PROFILE_END("Physics_Forces"); return; }
     
-        float breakDist = physics.searchRadius * 2.0f;
-        float connectDist = physics.searchRadius * 0.8f;
+        float breakDist = physics.idealDist * 2.5f;
+        float connectDist = physics.idealDist * 1.2f;
         
         scratchBuffer.clear();
         std::vector<Node*>& candidates = scratchBuffer;
