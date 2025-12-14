@@ -267,6 +267,66 @@ auto UserInterface::renderNetworkController() -> void {
             ImGui::EndTabItem();
         }
 
+        // --- Tab 5: Rendering ---
+        if (ImGui::BeginTabItem("Rendering")) {
+            ImGui::Spacing();
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.8f, 1.0f), "Level of Detail");
+            ImGui::Separator();
+            
+            float high = visualizer.getLODThresholdHigh();
+            float med = visualizer.getLODThresholdMedium();
+            
+            if (ImGui::SliderFloat("High Detail Zoom >", &high, 0.1f, 2.0f)) {
+                if (high < med) high = med + 0.01f;
+                visualizer.setLODThresholds(high, med);
+            }
+            
+            if (ImGui::SliderFloat("Medium Detail Zoom >", &med, 0.05f, 1.0f)) {
+                if (med > high) med = high - 0.01f;
+                visualizer.setLODThresholds(high, med);
+            }
+            
+            ImGui::Spacing();
+            ImGui::TextDisabled("Current Zoom: %.2f", visualizer.getCamera().zoom);
+            
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.8f, 1.0f), "Global Settings");
+            ImGui::Separator();
+
+            bool showText = visualizer.getShowText();
+            if (ImGui::Checkbox("Show Text Labels", &showText)) {
+                visualizer.setShowText(showText);
+            }
+
+            bool showVel = visualizer.getShowVelocity();
+            if (ImGui::Checkbox("Show Velocity Vectors", &showVel)) {
+                visualizer.setShowVelocity(showVel);
+            }
+
+            bool forceHigh = visualizer.getForceHighDetail();
+            if (ImGui::Checkbox("Force High Detail", &forceHigh)) {
+                visualizer.setForceHighDetail(forceHigh);
+            }
+
+            float scale = visualizer.getGlobalScale();
+            if (ImGui::SliderFloat("Node/Line Scale", &scale, 0.1f, 3.0f)) {
+                visualizer.setGlobalScale(scale);
+            }
+
+            float animSpeed = visualizer.getAnimationSpeed();
+            if (ImGui::SliderFloat("Animation Speed", &animSpeed, 0.0f, 5.0f)) {
+                visualizer.setAnimationSpeed(animSpeed);
+            }
+
+            bool animEnabled = visualizer.getAnimationsEnabled();
+            if (ImGui::Checkbox("Enable Visual Animations", &animEnabled)) {
+                visualizer.setAnimationsEnabled(animEnabled);
+            }
+
+            ImGui::EndTabItem();
+        }
+
         ImGui::EndTabBar();
     }
 

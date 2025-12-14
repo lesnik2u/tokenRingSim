@@ -46,7 +46,7 @@ private:
 
     float timeSinceLastSteal{0.0f}; // Cooldown for stealing to prevent flickering
     bool spatialGridDirty{true}; // Optimization: Rebuild grid only when nodes move
-    std::vector<Node*> scratchBuffer; // Reusable buffer for physics queries
+    mutable std::vector<Node*> scratchBuffer; // Reusable buffer for physics queries
     
     float sortingTimer{0.0f};
     float sortingInterval{0.2f};
@@ -170,4 +170,20 @@ public:
     
     auto setMaxClusterSize(int size) -> void { maxClusterSize = size; }
     auto getMaxClusterSize() const -> int { return maxClusterSize; }
+
+    auto getNodeAt(Vector2 pos, float radius) const -> Node* {
+        scratchBuffer.clear();
+        spatialGrid.query(pos, radius, scratchBuffer);
+        // Return closest
+        Node* closest = nullptr;
+        float minD = radius;
+        for(Node* n : scratchBuffer) {
+            float d = Vector2Distance(pos, n->getPosition());
+            if(d < minD) {
+                minD = d;
+                closest = n;
+            }
+        }
+        return closest;
+    }
 };

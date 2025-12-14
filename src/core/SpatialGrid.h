@@ -31,7 +31,7 @@ public:
 
     // Query nodes within the grid cells overlapping the given radius
     // Output results to the provided vector to avoid allocation overhead
-    void query(Vector2 position, float radius, std::vector<Node*>& results) {
+    void query(Vector2 position, float radius, std::vector<Node*>& results) const {
         results.clear();
         int minX = static_cast<int>(std::floor((position.x - radius) / cellSize));
         int maxX = static_cast<int>(std::floor((position.x + radius) / cellSize));

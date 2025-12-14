@@ -34,6 +34,9 @@ auto SimulationManager::removeRing(int index) -> void {
 
 auto SimulationManager::update(float dt) -> void {
     PROFILE_START("Sim_Update");
+    
+    // Reverted to variable timestep for performance. 
+    // The fixed timestep loop (running physics 2-4x per frame) was too heavy for this simulation.
     for (auto& ring : rings) {
         ring->update(dt);
         ring->updateNodeMovement(dt, {0,0}); // Infinite bounds

@@ -990,38 +990,47 @@ auto Ring::applyRingFormationForces(float dt) -> void {
 }
 
 auto Ring::processMessageQueue(float dt) -> void {
-    for (auto it = messageQueue.begin(); it != messageQueue.end(); ) {
-        it->progress += dt * 2.0f;
+    int writeIdx = 0;
+    for (int readIdx = 0; readIdx < static_cast<int>(messageQueue.size()); ++readIdx) {
+        auto& pm = messageQueue[readIdx];
+        pm.progress += dt * 2.0f;
+        
         Node* start = nullptr;
         Node* end = nullptr;
-        if (nodeIdMap.count(it->currentNodeId)) start = nodeIdMap[it->currentNodeId];
-        if (nodeIdMap.count(it->targetNodeId)) end = nodeIdMap[it->targetNodeId];
+        if (nodeIdMap.count(pm.currentNodeId)) start = nodeIdMap[pm.currentNodeId];
+        if (nodeIdMap.count(pm.targetNodeId)) end = nodeIdMap[pm.targetNodeId];
 
         if (!start || !end) {
-            it = messageQueue.erase(it);
+            // Drop message (node lost)
             continue;
         }
-        it->startPos = start->getPosition();
-        it->endPos = end->getPosition();
-        if (it->progress >= 1.0f) {
+        
+        pm.startPos = start->getPosition();
+        pm.endPos = end->getPosition();
+
+        if (pm.progress >= 1.0f) {
             if (visualizer) {
-                bool isReplica = it->content->isReplicationMessage;
-                visualizer->startDataTransfer(it->startPos, it->endPos, it->content->data->getKey(), isReplica);
+                bool isReplica = pm.content->isReplicationMessage;
+                visualizer->startDataTransfer(pm.startPos, pm.endPos, pm.content->data->getKey(), isReplica);
             }
             Node* targetNode = end;
-            auto [accepted, forwardMsg] = targetNode->receiveMessage(std::move(*it->content));
-            if (accepted) {
-                it = messageQueue.erase(it);
-            } else {
+            auto [accepted, forwardMsg] = targetNode->receiveMessage(std::move(*pm.content));
+            if (!accepted) {
+                // If forwarded, it creates a NEW message via routeMessage
                 auto msg = std::move(forwardMsg);
                 int currentId = targetNode->getId();
-                it = messageQueue.erase(it);
                 routeMessage(currentId, std::move(msg));
             }
+            // Message consumed (don't write back)
         } else {
-            ++it;
+            // Keep message
+            if (readIdx != writeIdx) {
+                messageQueue[writeIdx] = std::move(pm);
+            }
+            writeIdx++;
         }
     }
+    messageQueue.resize(writeIdx);
 }
 
 auto Ring::findDataOwner(int hash) -> Node * {
