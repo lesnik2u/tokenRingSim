@@ -1,23 +1,26 @@
 #pragma once
-#include <string>
 #include <format>
 #include <iostream>
+#include <string>
 
 class Entity {
 protected:
     int id;
     std::string name;
-    
+
 public:
+    // Constructor
     Entity(int id, std::string name) : id(id), name(std::move(name)) {}
+
+    // Virtual destructor
     virtual ~Entity() = default;
-    
-    [[nodiscard]] auto getId() const -> int { return id; }
-    [[nodiscard]] auto getName() const -> std::string_view { return name; }
-    
-    virtual auto toString() const -> std::string {
-        return std::format("Entity[id={}, name={}]", id, name);
-    }
-    
-    friend auto operator<<(std::ostream& os, const Entity& e) -> std::ostream&;
+
+    // Getters
+    int getId() const { return id; }
+    std::string_view getName() const { return name; }
+
+    // String representation
+    virtual std::string toString() const { return std::format("Entity[id={}, name={}]", id, name); }
+
+    friend std::ostream &operator<<(std::ostream &os, const Entity &e);
 };

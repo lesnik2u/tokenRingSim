@@ -1,37 +1,43 @@
 #pragma once
-#include "graphics/Visualizer.h"
 #include "core/SimulationManager.h"
+#include "graphics/Visualizer.h"
+#include <map>
+#include <vector>
 
 class UserInterface {
 public:
-    UserInterface(SimulationManager& sim, Visualizer& visualizer);
+    UserInterface(SimulationManager &sim, Visualizer &visualizer);
 
-    auto render() -> void;
-    auto isMouseCaptured() const -> bool;
+    // Main interaction
+    void render();
+    bool isMouseCaptured() const;
 
 private:
-    SimulationManager& sim;
-    Visualizer& visualizer;
+    SimulationManager &sim;
+    Visualizer &visualizer;
 
+    // View state
     bool showDebugPanel{true};
     bool showNodeInspector{true};
     bool showNetworkController{true};
-    // bool showTrafficLog{true};
-    int replicationFactor{2}; // UI state for RF
-    float messageSpeed{0.5f}; // UI state for speed
+    int replicationFactor{2};
+    float messageSpeed{0.5f};
     bool mobilityEnabled{true};
     bool ringFormation{true};
 
-    int selectedRingIndex{-1}; // Index of the currently selected ring in SimulationManager
-    int lastSelectedRingIndex{-1}; // To detect selection changes
+    int selectedRingIndex{-1};
+    int lastSelectedRingIndex{-1};
 
-    // Inspector State
-    // We use sim.getSelectedNodes() instead of selectedNodeId
+    // Cached inspector data
+    std::map<int, std::vector<int>> cachedClusters;
+    uint64_t lastClusterTopologyVersion = 0;
 
-    auto renderNetworkController() -> void;
-    auto renderNodeInspector() -> void;
-    auto renderOverlay() -> void;
-    auto renderTrafficLog() -> void;
-    
-    auto setupStyle() -> void; // Apply custom visual theme
+    // Internal sub-renders
+    void renderNetworkController();
+    void renderNodeInspector();
+    void renderOverlay();
+    void renderTrafficLog();
+
+    // Style
+    void setupStyle();
 };

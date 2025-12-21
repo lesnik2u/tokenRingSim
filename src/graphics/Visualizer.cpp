@@ -1,9 +1,18 @@
 #include "graphics/Visualizer.h"
 #include "utils/Logger.h"
-#include <cmath>
 #include <algorithm>
-#include <unordered_map>
+#include <array>
+#include <cassert>
+#include <cmath>
 #include <string>
+#include <unordered_map>
+
+static constexpr std::array<Vector2, 6> UNIT_HEXAGON = {{{1.0f, 0.0f},
+                                                         {0.5f, 0.86602540378f},
+                                                         {-0.5f, 0.86602540378f},
+                                                         {-1.0f, 0.0f},
+                                                         {-0.5f, -0.86602540378f},
+                                                         {0.5f, -0.86602540378f}}};
 
 Visualizer::Visualizer() {
     camera.target = {640, 360};
@@ -13,30 +22,61 @@ Visualizer::Visualizer() {
     bakeNodeTexture();
 }
 
-Visualizer::~Visualizer() {
-    UnloadRenderTexture(nodeTexture);
-}
+Visualizer::~Visualizer() { UnloadRenderTexture(nodeTexture); }
 
+// Renders node texture to a texture mode for better performance
 void Visualizer::bakeNodeTexture() {
     nodeTexture = LoadRenderTexture(128, 128);
     BeginTextureMode(nodeTexture);
-    ClearBackground(Color{0,0,0,0});
-    
+    ClearBackground(Color{0, 0, 0, 0});
+
     DrawCircleGradient(64, 64, 50.0f, Fade(WHITE, 0.6f), Fade(WHITE, 0.0f));
     DrawPoly(Vector2{64, 64}, 6, 20.0f, 0.0f, Fade(WHITE, 0.9f));
     DrawPolyLinesEx(Vector2{64, 64}, 6, 20.0f, 0.0f, 3.0f, WHITE);
-    
+
     EndTextureMode();
     SetTextureFilter(nodeTexture.texture, TEXTURE_FILTER_BILINEAR);
 }
 
+// Adjusts detail level based on zoom
+void Visualizer::updateLOD() {
+    if (forceHighDetail) {
+        cachedLOD = LODLevel::HIGH;
+        return;
+    }
+
+    float z = camera.zoom;
+    float bufferHigh = 0.05f;
+    float bufferMed = 0.03f;
+
+    switch (cachedLOD) {
+    case LODLevel::HIGH:
+        if (z < lodThresholdHigh - bufferHigh)
+            cachedLOD = LODLevel::MEDIUM;
+        break;
+    case LODLevel::MEDIUM:
+        if (z > lodThresholdHigh)
+            cachedLOD = LODLevel::HIGH;
+        else if (z < lodThresholdMedium - bufferMed)
+            cachedLOD = LODLevel::LOW;
+        break;
+    case LODLevel::LOW:
+        if (z > lodThresholdMedium)
+            cachedLOD = LODLevel::MEDIUM;
+        break;
+    }
+}
+
+// Processes camera movement and zoom
 void Visualizer::handleInput() {
     float wheel = GetMouseWheelMove();
     if (wheel != 0) {
         float zoomIncrement = 0.1f;
         camera.zoom += wheel * zoomIncrement;
-        if (camera.zoom < 0.1f) camera.zoom = 0.1f;
-        if (camera.zoom > 3.0f) camera.zoom = 3.0f;
+        if (camera.zoom < 0.1f)
+            camera.zoom = 0.1f;
+        if (camera.zoom > 3.0f)
+            camera.zoom = 3.0f;
     }
 
     if (IsMouseButtonPressed(MOUSE_BUTTON_RIGHT)) {
@@ -57,7 +97,7 @@ void Visualizer::handleInput() {
     }
 
     if (IsKeyPressed(KEY_R)) {
-        camera.target = {640, 360};
+        camera.target = {(float)GetScreenWidth() / 2.0f, (float)GetScreenHeight() / 2.0f};
         camera.zoom = 1.0f;
     }
 }
@@ -65,118 +105,146 @@ void Visualizer::handleInput() {
 void Visualizer::beginCamera() { BeginMode2D(camera); }
 void Visualizer::endCamera() { EndMode2D(); }
 
-void Visualizer::addTokenTrailPoint(Vector2 point) {
-    tokenTrail.push_back(point);
-    if (tokenTrail.size() > 50) {
-        tokenTrail.erase(tokenTrail.begin());
-    }
-}
-
-void Visualizer::drawTokenTrail() {}
 void Visualizer::drawRingGlow(const Ring &ring) {}
 
+// Main entry point for drawing a ring
 void Visualizer::drawRing(const Ring &ring, float dt) {
     PROFILE_START("Vis_DrawRing");
+    updateLOD();
+
     animationTime += dt * animationSpeed;
+    if (animationTime > 10000.0f)
+        animationTime -= 10000.0f;
 
-    const auto &nodes = ring.getNodes();
-    if (nodes.empty()) { PROFILE_END("Vis_DrawRing"); return; }
-
-    // 1. Pre-calculate Colors (Map ID -> Color)
-    std::unordered_map<int, Color> colorMap;
-    for (const auto& node : nodes) {
-        int cid = node->getClusterId();
-        Color col = GRAY;
-        if (cid != -1) col = ColorFromHSV((cid * 67) % 360, 0.8f, 0.9f);
-        if (node->getSelected()) col = WHITE;
-        colorMap[node->getId()] = col;
+    const std::vector<std::unique_ptr<Node>> &nodes = ring.getNodes();
+    if (nodes.empty()) {
+        PROFILE_END("Vis_DrawRing");
+        return;
     }
 
-    // 2. Additive Pass (Everything Glowing)
+    if (ring.getTopologyVersion() != lastTopologyVersion ||
+        ring.getSelectionVersion() != lastSelectionVersion) {
+        cachedColorMap.clear();
+        cachedColorMap.reserve(nodes.size());
+
+        for (const std::unique_ptr<Node> &node : nodes) {
+            int cid = node->getClusterId();
+            Color col = GRAY;
+            if (cid != -1)
+                col = ColorFromHSV((cid * 67) % 360, 0.8f, 0.9f);
+            if (node->getSelected())
+                col = WHITE;
+            cachedColorMap[node->getId()] = col;
+        }
+        lastTopologyVersion = ring.getTopologyVersion();
+        lastSelectionVersion = ring.getSelectionVersion();
+    }
+    const std::unordered_map<int, Color> &colorMap = cachedColorMap;
+
+    std::vector<Vector2> screenPositions;
+    std::vector<uint8_t> visibilityCache;
+    screenPositions.reserve(nodes.size());
+    visibilityCache.reserve(nodes.size());
+
+    float sw = (float)GetScreenWidth();
+    float sh = (float)GetScreenHeight();
+    const float pad = 100.0f;
+
+    for (const std::unique_ptr<Node> &node : nodes) {
+        Vector2 sp = GetWorldToScreen2D(node->getPosition(), camera);
+        screenPositions.push_back(sp);
+
+        uint8_t visible =
+            (sp.x > -pad && sp.x < sw + pad && sp.y > -pad && sp.y < sh + pad) ? 1 : 0;
+        visibilityCache.push_back(visible);
+    }
+
     BeginBlendMode(BLEND_ADDITIVE);
-    
-    drawConnections(nodes, colorMap);
-    drawDataTransfers(dt * animationSpeed); 
-    drawNodesAdditive(nodes, colorMap);
-    
+
+    drawConnections(nodes, colorMap, screenPositions, visibilityCache);
+    drawDataTransfers(dt * animationSpeed);
+    drawNodesAdditive(nodes, colorMap, screenPositions, visibilityCache);
+
     EndBlendMode();
 
-    // 3. Normal Pass (Text & UI elements)
-    if (showText) drawNodesText(nodes);
+    if (showText)
+        drawNodesText(nodes, screenPositions, visibilityCache);
     drawDataDistribution(ring, {0, 0});
-    
-    // 4. Debug Pass
-    if (showVelocity) drawVelocityVectors(nodes);
+
+    if (showVelocity)
+        drawVelocityVectors(nodes, screenPositions, visibilityCache);
 
     PROFILE_END("Vis_DrawRing");
 }
 
-void Visualizer::drawConnections(const std::vector<std::unique_ptr<Node>>& nodes, const std::unordered_map<int, Color>& colorMap) {
-    // Fast lookup map for positions
-    std::unordered_map<int, Vector2> posMap;
-    for (const auto& node : nodes) posMap[node->getId()] = node->getPosition();
-
+// Draws lines between connected nodes
+void Visualizer::drawConnections(const std::vector<std::unique_ptr<Node>> &nodes,
+                                 const std::unordered_map<int, Color> &colorMap,
+                                 const std::vector<Vector2> &screenPositions,
+                                 const std::vector<uint8_t> &visibilityCache) {
     LODLevel lod = getLODLevel();
-    // High LOD: Thick lines + Glow (Standard Raylib)
-    // Med/Low LOD: Thin lines (Batched RL_LINES)
-    
+
     if (lod == LODLevel::HIGH) {
-        for (const auto& node : nodes) {
+        for (size_t i = 0; i < nodes.size(); ++i) {
+            if (!visibilityCache[i])
+                continue;
+
+            const std::unique_ptr<Node> &node = nodes[i];
             Vector2 pos1 = node->getPosition();
-            
-            // Culling
-            Vector2 screenPos = GetWorldToScreen2D(pos1, camera);
-            if (screenPos.x < -100 || screenPos.x > GetScreenWidth() + 100 || 
-                screenPos.y < -100 || screenPos.y > GetScreenHeight() + 100) continue;
-
             int id1 = node->getId();
-            Color col1 = (colorMap.find(id1) != colorMap.end()) ? colorMap.at(id1) : GRAY;
 
-            for (Node* neighbor : node->getNeighbors()) {
+            auto it1 = colorMap.find(id1);
+            Color col1 = (it1 != colorMap.end()) ? it1->second : GRAY;
+
+            for (Node *neighbor : node->getNeighbors()) {
+                assert(neighbor && "Neighbor cannot be null");
+
                 int id2 = neighbor->getId();
-                if (id1 < id2 && posMap.count(id2)) { 
-                    Vector2 pos2 = posMap.at(id2);
+                if (id1 < id2) {
+                    Vector2 pos2 = neighbor->getPosition();
                     Color lineColor = GRAY;
-                    if (node->getClusterId() != -1 && node->getClusterId() == neighbor->getClusterId()) {
+                    if (node->getClusterId() != -1 &&
+                        node->getClusterId() == neighbor->getClusterId()) {
                         lineColor = col1;
                     }
-                    DrawLineEx(pos1, pos2, 4.0f * globalScale, Fade(lineColor, 0.3f)); // Glow
-                    DrawLineEx(pos1, pos2, 1.5f * globalScale, Fade(WHITE, 0.6f));     // Core
+                    DrawLineEx(pos1, pos2, 4.0f * globalScale, Fade(lineColor, 0.3f));
+                    DrawLineEx(pos1, pos2, 1.5f * globalScale, Fade(WHITE, 0.6f));
                 }
             }
         }
     } else {
-        // Fast Batch Rendering
         rlBegin(RL_LINES);
-        for (const auto& node : nodes) {
+        for (size_t i = 0; i < nodes.size(); ++i) {
+            if (!visibilityCache[i])
+                continue;
+
+            const std::unique_ptr<Node> &node = nodes[i];
             Vector2 pos1 = node->getPosition();
-            // Less aggressive culling for lines since they span
-            Vector2 screenPos = GetWorldToScreen2D(pos1, camera);
-            if (screenPos.x < -300 || screenPos.x > GetScreenWidth() + 300 || 
-                screenPos.y < -300 || screenPos.y > GetScreenHeight() + 300) continue;
-
             int id1 = node->getId();
-            Color col1 = (colorMap.find(id1) != colorMap.end()) ? colorMap.at(id1) : GRAY;
 
-            for (Node* neighbor : node->getNeighbors()) {
+            auto it1 = colorMap.find(id1);
+            Color col1 = (it1 != colorMap.end()) ? it1->second : GRAY;
+
+            for (Node *neighbor : node->getNeighbors()) {
+                assert(neighbor && "Neighbor cannot be null");
+
                 int id2 = neighbor->getId();
-                if (id1 < id2 && posMap.count(id2)) { 
-                    Vector2 pos2 = posMap.at(id2);
+                if (id1 < id2) {
+                    Vector2 pos2 = neighbor->getPosition();
                     Color lineColor = GRAY;
-                    if (node->getClusterId() != -1 && node->getClusterId() == neighbor->getClusterId()) {
+                    if (node->getClusterId() != -1 &&
+                        node->getClusterId() == neighbor->getClusterId()) {
                         lineColor = col1;
                     }
-                    
-                    // Simple white core
+
                     rlColor4ub(255, 255, 255, 150);
                     rlVertex2f(pos1.x, pos1.y);
                     rlVertex2f(pos2.x, pos2.y);
-                    
-                    // Colored tint (optional, adds 2x vertices)
+
                     if (lod == LODLevel::MEDIUM) {
-                         rlColor4ub(lineColor.r, lineColor.g, lineColor.b, 100);
-                         rlVertex2f(pos1.x, pos1.y);
-                         rlVertex2f(pos2.x, pos2.y);
+                        rlColor4ub(lineColor.r, lineColor.g, lineColor.b, 100);
+                        rlVertex2f(pos1.x, pos1.y);
+                        rlVertex2f(pos2.x, pos2.y);
                     }
                 }
             }
@@ -185,67 +253,69 @@ void Visualizer::drawConnections(const std::vector<std::unique_ptr<Node>>& nodes
     }
 }
 
-void Visualizer::drawNodesAdditive(const std::vector<std::unique_ptr<Node>>& nodes, const std::unordered_map<int, Color>& colorMap) {
+// Draws the main visual body of nodes
+void Visualizer::drawNodesAdditive(const std::vector<std::unique_ptr<Node>> &nodes,
+                                   const std::unordered_map<int, Color> &colorMap,
+                                   const std::vector<Vector2> &screenPositions,
+                                   const std::vector<uint8_t> &visibilityCache) {
     Rectangle source = {0, 0, (float)nodeTexture.texture.width, (float)-nodeTexture.texture.height};
     LODLevel lod = getLODLevel();
-    
-    // Pass 1: Batched Sprites (All LODs)
-    // Raylib batches DrawTexture calls automatically if state doesn't change
-    for (const auto& node : nodes) {
-        Vector2 pos = node->getPosition();
-        // Simple frustum culling
-        Vector2 screenPos = GetWorldToScreen2D(pos, camera);
-        if (screenPos.x < -50 || screenPos.x > GetScreenWidth() + 50 || 
-            screenPos.y < -50 || screenPos.y > GetScreenHeight() + 50) continue;
 
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        if (!visibilityCache[i])
+            continue;
+
+        const std::unique_ptr<Node> &node = nodes[i];
+        Vector2 pos = node->getPosition();
         int id = node->getId();
-        Color baseColor = (colorMap.find(id) != colorMap.end()) ? colorMap.at(id) : GRAY;
+
+        auto it = colorMap.find(id);
+        Color baseColor = (it != colorMap.end()) ? it->second : GRAY;
 
         float pulse = 1.0f;
         float rotation = 0.0f;
-        
+
         if (animationsEnabled) {
             pulse = 1.0f + 0.2f * sin(animationTime * 3.0f + id);
             rotation = animationTime * 40.0f + id * 10.0f;
         }
 
         float scale = (lod == LODLevel::LOW) ? 0.5f : 0.8f * pulse;
-        scale *= globalScale; // Apply global scaling
-        
-        Rectangle dest = {pos.x, pos.y, nodeTexture.texture.width * scale, nodeTexture.texture.height * scale};
+        scale *= globalScale;
+
+        Rectangle dest = {pos.x, pos.y, nodeTexture.texture.width * scale,
+                          nodeTexture.texture.height * scale};
         Vector2 origin = {dest.width / 2.0f, dest.height / 2.0f};
-        
+
         DrawTexturePro(nodeTexture.texture, source, dest, origin, rotation, baseColor);
     }
 
-    // Pass 2: Batched Lines (Medium/High LOD)
     if (lod != LODLevel::LOW) {
         rlBegin(RL_LINES);
-        for (const auto& node : nodes) {
-            Vector2 pos = node->getPosition();
-            // Culling reuse? For now, re-check or skip optimization for lines
-            Vector2 screenPos = GetWorldToScreen2D(pos, camera);
-            if (screenPos.x < -50 || screenPos.x > GetScreenWidth() + 50 || 
-                screenPos.y < -50 || screenPos.y > GetScreenHeight() + 50) continue;
+        for (size_t i = 0; i < nodes.size(); ++i) {
+            if (!visibilityCache[i])
+                continue;
 
+            const std::unique_ptr<Node> &node = nodes[i];
+            Vector2 pos = node->getPosition();
             float radius = 20.0f * globalScale;
             float rotation = 0.0f;
             if (animationsEnabled) {
                 rotation = (animationTime * 40.0f + node->getId() * 10.0f) * DEG2RAD;
-            } else {
-                 // Optional: Static offset per node ID if we want random static rotation
-                 // rotation = (node->getId() * 10.0f) * DEG2RAD;
-                 // For now, keep it aligned (0)
             }
-            
-            // Draw Hexagon manually for batching
-            for (int i = 0; i < 6; i++) {
-                float angle1 = rotation + (i * 60) * DEG2RAD;
-                float angle2 = rotation + ((i + 1) * 60) * DEG2RAD;
-                
-                Vector2 p1 = { pos.x + cosf(angle1) * radius, pos.y + sinf(angle1) * radius };
-                Vector2 p2 = { pos.x + cosf(angle2) * radius, pos.y + sinf(angle2) * radius };
-                
+
+            float cr = cosf(rotation);
+            float sr = sinf(rotation);
+
+            for (int k = 0; k < 6; k++) {
+                const Vector2 &v1 = UNIT_HEXAGON[k];
+                const Vector2 &v2 = UNIT_HEXAGON[(k + 1) % 6];
+
+                Vector2 p1 = {pos.x + radius * (v1.x * cr - v1.y * sr),
+                              pos.y + radius * (v1.x * sr + v1.y * cr)};
+                Vector2 p2 = {pos.x + radius * (v2.x * cr - v2.y * sr),
+                              pos.y + radius * (v2.x * sr + v2.y * cr)};
+
                 rlColor4ub(255, 255, 255, 200);
                 rlVertex2f(p1.x, p1.y);
                 rlVertex2f(p2.x, p2.y);
@@ -253,70 +323,69 @@ void Visualizer::drawNodesAdditive(const std::vector<std::unique_ptr<Node>>& nod
         }
         rlEnd();
     }
-    
-    // Pass 3: Satellites (High LOD only)
-    if (lod == LODLevel::HIGH) {
-        for (const auto& node : nodes) {
-            int dataCount = node->getDataCount();
-            if (dataCount == 0) continue;
-            
-            Vector2 pos = node->getPosition();
-            Vector2 screenPos = GetWorldToScreen2D(pos, camera);
-            if (screenPos.x < -50 || screenPos.x > GetScreenWidth() + 50 || 
-                screenPos.y < -50 || screenPos.y > GetScreenHeight() + 50) continue;
 
+    if (lod == LODLevel::HIGH) {
+        for (size_t i = 0; i < nodes.size(); ++i) {
+            if (!visibilityCache[i])
+                continue;
+
+            const std::unique_ptr<Node> &node = nodes[i];
+            int dataCount = (int)node->getDataCount();
+            if (dataCount == 0)
+                continue;
+
+            Vector2 pos = node->getPosition();
             int id = node->getId();
-            Color baseColor = (colorMap.find(id) != colorMap.end()) ? colorMap.at(id) : GRAY;
+
+            auto it = colorMap.find(id);
+            Color baseColor = (it != colorMap.end()) ? it->second : GRAY;
+
             float radius = 20.0f * globalScale;
             float orbitRadius = radius * 1.8f;
 
-            for (int i = 0; i < dataCount; ++i) {
-                float angle = (i * 360.0f / dataCount) * DEG2RAD;
+            for (int k = 0; k < dataCount; ++k) {
+                float angle = (k * 360.0f / dataCount) * DEG2RAD;
                 if (animationsEnabled) {
                     angle += animationTime * 2.0f;
                 }
-                
-                Vector2 satPos = { 
-                    pos.x + cos(angle) * orbitRadius, 
-                    pos.y + sin(angle) * orbitRadius 
-                };
-                // Use DrawCircleV which is efficient enough for small batches, or could use POINTS
-                DrawCircleV(satPos, 3.0f, WHITE);
-                DrawCircleV(satPos, 6.0f, Fade(baseColor, 0.5f));
+
+                Vector2 satPos = {pos.x + cosf(angle) * orbitRadius,
+                                  pos.y + sinf(angle) * orbitRadius};
+                DrawCircleV(satPos, 3.0f * globalScale, WHITE);
+                DrawCircleV(satPos, 6.0f * globalScale, Fade(baseColor, 0.5f));
             }
         }
     }
 }
 
-void Visualizer::drawNodesText(const std::vector<std::unique_ptr<Node>>& nodes) {
-    if (getLODLevel() != LODLevel::HIGH) return; // Optimization
+// Renders node names
+void Visualizer::drawNodesText(const std::vector<std::unique_ptr<Node>> &nodes,
+                               const std::vector<Vector2> &screenPositions,
+                               const std::vector<uint8_t> &visibilityCache) {
+    if (getLODLevel() != LODLevel::HIGH)
+        return;
 
-    for (const auto& node : nodes) {
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        if (!visibilityCache[i])
+            continue;
+
+        const std::unique_ptr<Node> &node = nodes[i];
         Vector2 pos = node->getPosition();
-        // Culling
-        Vector2 screenPos = GetWorldToScreen2D(pos, camera);
-        if (screenPos.x < -50 || screenPos.x > GetScreenWidth() + 50 || 
-            screenPos.y < -50 || screenPos.y > GetScreenHeight() + 50) continue;
-
         float radius = 20.0f * globalScale;
-        
-        // Draw Text
-        const std::string& label = node->getName();
+
+        const std::string &label = node->getName();
         int textWidth = MeasureText(label.c_str(), 10);
-        DrawText(label.c_str(), pos.x - textWidth/2, pos.y + radius + 5, 10, WHITE);
-        
+        DrawText(label.c_str(), (int)(pos.x - textWidth / 2), (int)(pos.y + radius + 5), 10, WHITE);
+
         if (node->getSelected()) {
             drawSelectedNodeHighlight(*node);
         }
     }
 }
 
-void Visualizer::drawToken(Vector2 from, Vector2 to, float progress) {
-}
+void Visualizer::drawDataDistribution(const Ring &ring, Vector2 position) {}
 
-void Visualizer::drawDataDistribution(const Ring &ring, Vector2 position) {
-}
-
+// Initializes a moving data point visualization
 void Visualizer::startDataTransfer(Vector2 from, Vector2 to, std::string key, bool isReplication) {
     DataTransfer transfer;
     transfer.fromPos = from;
@@ -328,9 +397,10 @@ void Visualizer::startDataTransfer(Vector2 from, Vector2 to, std::string key, bo
     activeTransfers.push_back(transfer);
 }
 
+// Updates and draws active data movements
 void Visualizer::drawDataTransfers(float dt) {
-    for (auto it = activeTransfers.begin(); it != activeTransfers.end(); ) {
-        it->progress += dt * 1.5f; 
+    for (auto it = activeTransfers.begin(); it != activeTransfers.end();) {
+        it->progress += dt * 1.5f;
 
         if (it->progress >= 1.0f) {
             it = activeTransfers.erase(it);
@@ -338,68 +408,58 @@ void Visualizer::drawDataTransfers(float dt) {
         }
 
         float t = it->progress;
-        Vector2 pos = {
-            it->fromPos.x + (it->toPos.x - it->fromPos.x) * t,
-            it->fromPos.y + (it->toPos.y - it->fromPos.y) * t
-        };
+        Vector2 pos = {it->fromPos.x + (it->toPos.x - it->fromPos.x) * t,
+                       it->fromPos.y + (it->toPos.y - it->fromPos.y) * t};
 
-        DrawCircleV(pos, 6.0f, it->color);
-        DrawCircleV(pos, 12.0f, Fade(it->color, 0.5f));
-        
-        Vector2 tail = {
-            it->fromPos.x + (it->toPos.x - it->fromPos.x) * (t - 0.1f),
-            it->fromPos.y + (it->toPos.y - it->fromPos.y) * (t - 0.1f)
-        };
-        if (t > 0.1f) DrawLineEx(tail, pos, 4.0f, Fade(it->color, 0.5f));
+        DrawCircleV(pos, 6.0f * globalScale, it->color);
+        DrawCircleV(pos, 12.0f * globalScale, Fade(it->color, 0.5f));
+
+        Vector2 tail = {it->fromPos.x + (it->toPos.x - it->fromPos.x) * (t - 0.1f),
+                        it->fromPos.y + (it->toPos.y - it->fromPos.y) * (t - 0.1f)};
+        if (t > 0.1f)
+            DrawLineEx(tail, pos, 4.0f * globalScale, Fade(it->color, 0.5f));
 
         ++it;
     }
 }
 
-void Visualizer::drawVelocityVectors(const std::vector<std::unique_ptr<Node>>& nodes) {
+// Shows movement directions for debugging
+void Visualizer::drawVelocityVectors(const std::vector<std::unique_ptr<Node>> &nodes,
+                                     const std::vector<Vector2> &screenPositions,
+                                     const std::vector<uint8_t> &visibilityCache) {
     rlBegin(RL_LINES);
-    rlColor4ub(0, 255, 0, 150); // Green semi-transparent
+    rlColor4ub(0, 255, 0, 150);
 
-    for (const auto& node : nodes) {
-        if (!node->getMobile()) continue;
-        
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        if (!visibilityCache[i])
+            continue;
+
+        const std::unique_ptr<Node> &node = nodes[i];
+        if (!node->getMobile())
+            continue;
+
         Vector2 pos = node->getPosition();
-        // Culling
-        Vector2 screenPos = GetWorldToScreen2D(pos, camera);
-        if (screenPos.x < -50 || screenPos.x > GetScreenWidth() + 50 || 
-            screenPos.y < -50 || screenPos.y > GetScreenHeight() + 50) continue;
-
         Vector2 vel = node->getVelocity();
         float speed = Vector2Length(vel);
-        if (speed < 1.0f) continue;
+        if (speed < 1.0f)
+            continue;
 
-        // Scale vector for visibility
-        Vector2 end = { pos.x + vel.x * 0.5f, pos.y + vel.y * 0.5f };
-        
+        Vector2 end = {pos.x + vel.x * 0.5f, pos.y + vel.y * 0.5f};
+
         rlVertex2f(pos.x, pos.y);
         rlVertex2f(end.x, end.y);
     }
     rlEnd();
 }
 
-int Visualizer::checkNodeClick(const Ring &ring) {
-    if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT)) {
-        Vector2 mouseScreenPos = GetMousePosition();
-        Vector2 mouseWorldPos = GetScreenToWorld2D(mouseScreenPos, camera);
-
-        Node* clicked = ring.getNodeAt(mouseWorldPos, 30.0f);
-        if (clicked) return clicked->getId();
-        
-        return -1;
-    }
-    return -1;
+void Visualizer::drawSelectionBox(Rectangle rect) {
+    DrawRectangleLinesEx(rect, 2.0f, WHITE);
+    DrawRectangleRec(rect, Fade(WHITE, 0.2f));
 }
 
+// Highlight circle for selected node
 void Visualizer::drawSelectedNodeHighlight(const Node &node) {
     Vector2 pos = node.getPosition();
-    // Note: This is called inside Normal pass, so blend mode is Normal.
-    // Need to switch if we want additive glow here?
-    // Or just draw lines.
-    DrawCircleLines(pos.x, pos.y, 40.0f * globalScale, WHITE);
-    DrawCircleLines(pos.x, pos.y, 45.0f * globalScale, Fade(WHITE, 0.5f));
+    DrawCircleLines((int)pos.x, (int)pos.y, 40.0f * globalScale, WHITE);
+    DrawCircleLines((int)pos.x, (int)pos.y, 45.0f * globalScale, Fade(WHITE, 0.5f));
 }

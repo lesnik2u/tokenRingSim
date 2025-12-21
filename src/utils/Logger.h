@@ -1,9 +1,9 @@
 #pragma once
-#include <iostream>
-#include <fstream>
-#include <format>
-#include <string_view>
 #include <chrono>
+#include <format>
+#include <fstream>
+#include <iostream>
+#include <string_view>
 #include <unordered_map>
 
 const std::string LOG_FILE_NAME = "simulation.log";
@@ -15,44 +15,50 @@ class Profiler {
     };
     std::unordered_map<std::string, Entry> entries;
     std::unordered_map<std::string, std::chrono::high_resolution_clock::time_point> starts;
-    std::chrono::high_resolution_clock::time_point reportStart = std::chrono::high_resolution_clock::now();
+    std::chrono::high_resolution_clock::time_point reportStart =
+        std::chrono::high_resolution_clock::now();
     std::ofstream perfFile;
 
-    Profiler() {
-        perfFile.open("performance.log", std::ios::out | std::ios::trunc);
-    }
+    Profiler() { perfFile.open("performance.log", std::ios::out | std::ios::trunc); }
 
 public:
     ~Profiler() {
-        if (perfFile.is_open()) perfFile.close();
+        if (perfFile.is_open())
+            perfFile.close();
     }
 
-    static auto instance() -> Profiler& {
+    static Profiler &instance() {
         static Profiler p;
         return p;
     }
 
-    void start(const std::string& name) {
+    // Records start time for a block
+    void start(const std::string &name) {
         starts[name] = std::chrono::high_resolution_clock::now();
     }
 
-    void end(const std::string& name) {
+    // Records end time and accumulates duration
+    void end(const std::string &name) {
         auto end = std::chrono::high_resolution_clock::now();
-        auto start = starts[name];
-        std::chrono::duration<double, std::milli> diff = end - start;
-        entries[name].totalTime += diff.count();
-        entries[name].count++;
+        auto it = starts.find(name);
+        if (it != starts.end()) {
+            std::chrono::duration<double, std::milli> diff = end - it->second;
+            entries[name].totalTime += diff.count();
+            entries[name].count++;
+        }
     }
 
+    // Periodically outputs performance stats
     void report() {
         auto now = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> elapsed = now - reportStart;
-        if (elapsed.count() > 2.0) { // Report every 2 seconds
+        if (elapsed.count() > 2.0) {
             if (perfFile.is_open()) {
-                perfFile << "\n--- PERF REPORT (avg ms/frame) ---\n";
-                for (auto& [name, entry] : entries) {
+                perfFile << "\n--- PERF REPORT (avg ms/frame) ---\\n";
+                for (auto &[name, entry] : entries) {
                     if (entry.count > 0)
-                        perfFile << std::format("{}: {:.3f} ms\n", name, entry.totalTime / entry.count);
+                        perfFile << std::format("{}: {:.3f} ms\n", name,
+                                                entry.totalTime / entry.count);
                     entry.totalTime = 0;
                     entry.count = 0;
                 }
@@ -63,10 +69,13 @@ public:
         }
     }
 
-    auto getAverageTime(const std::string& name) -> double {
-        if (entries.find(name) != entries.end()) {
-            auto& e = entries[name];
-            if (e.count == 0) return 0.0;
+    // Returns average time for a block
+    double getAverageTime(const std::string &name) {
+        auto it = entries.find(name);
+        if (it != entries.end()) {
+            const Entry &e = it->second;
+            if (e.count == 0)
+                return 0.0;
             return e.totalTime / e.count;
         }
         return 0.0;
@@ -86,7 +95,6 @@ private:
             logFile << "New session started at " << getTimestamp() << "\n";
             logFile << "========================================\n";
             logFile.flush();
-            // std::cout << "Logging to file: " << LOG_FILE_NAME << std::endl;
         }
     }
 
@@ -100,49 +108,51 @@ private:
         }
     }
 
-    auto getTimestamp() const -> std::string {
+    // Generates formatted timestamp
+    std::string getTimestamp() const {
         auto now = std::chrono::system_clock::now();
         auto time = std::chrono::system_clock::to_time_t(now);
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(
-            now.time_since_epoch()) % 1000;
+        auto ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()) % 1000;
 
         char buf[20];
         std::strftime(buf, sizeof(buf), "%H:%M:%S", std::localtime(&time));
-        return std::format("{}.{:03d}", buf, ms.count());
+        return std::format("{}.{:03d}", buf, (int)ms.count());
     }
 
 public:
-    static auto instance() -> Logger& {
+    static Logger &instance() {
         static Logger logger;
         return logger;
     }
 
-    Logger(const Logger&) = delete;
-    auto operator=(const Logger&) -> Logger& = delete;
+    Logger(const Logger &) = delete;
+    Logger &operator=(const Logger &) = delete;
 
-    template<typename... Args>
-    auto info(std::format_string<Args...> fmt, Args&&... args) -> void {
-        std::string message = std::format("[{}] INFO: ", getTimestamp()) + std::format(fmt, std::forward<Args>(args)...);
-        // std::cout << message << "\n"; // Disabled console spam for performance
+    // Log informational message
+    template <typename... Args> void info(std::format_string<Args...> fmt, Args &&...args) {
+        std::string message = std::format("[{}] INFO: ", getTimestamp()) +
+                              std::format(fmt, std::forward<Args>(args)...);
         if (logFile.is_open()) {
             logFile << message << "\n";
             logFile.flush();
         }
     }
 
-    template<typename... Args>
-    auto debug(std::format_string<Args...> fmt, Args&&... args) -> void {
-        // Debug logs only to file
-        std::string message = std::format("[{}] DEBUG: ", getTimestamp()) + std::format(fmt, std::forward<Args>(args)...);
+    // Log debug message
+    template <typename... Args> void debug(std::format_string<Args...> fmt, Args &&...args) {
+        std::string message = std::format("[{}] DEBUG: ", getTimestamp()) +
+                              std::format(fmt, std::forward<Args>(args)...);
         if (logFile.is_open()) {
             logFile << message << "\n";
             logFile.flush();
         }
     }
 
-    template<typename... Args>
-    auto error(std::format_string<Args...> fmt, Args&&... args) -> void {
-        std::string message = std::format("[{}] ERROR: ", getTimestamp()) + std::format(fmt, std::forward<Args>(args)...);
+    // Log error message
+    template <typename... Args> void error(std::format_string<Args...> fmt, Args &&...args) {
+        std::string message = std::format("[{}] ERROR: ", getTimestamp()) +
+                              std::format(fmt, std::forward<Args>(args)...);
         std::cerr << message << "\n";
         if (logFile.is_open()) {
             logFile << message << "\n";
@@ -150,10 +160,11 @@ public:
         }
     }
 
-    template<typename... Args>
-    auto warn(std::format_string<Args...> fmt, Args&&... args) -> void {
-        std::string message = std::format("[{}] WARN: ", getTimestamp()) + std::format(fmt, std::forward<Args>(args)...);
-        std::cerr << message << "\n"; // Warnings also to stderr
+    // Log warning message
+    template <typename... Args> void warn(std::format_string<Args...> fmt, Args &&...args) {
+        std::string message = std::format("[{}] WARN: ", getTimestamp()) +
+                              std::format(fmt, std::forward<Args>(args)...);
+        std::cerr << message << "\n";
         if (logFile.is_open()) {
             logFile << message << "\n";
             logFile.flush();

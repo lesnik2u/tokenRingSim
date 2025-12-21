@@ -1,10 +1,10 @@
 #pragma once
+#include "Data.h"
 #include "Entity.h"
 #include <memory>
 #include <raylib.h>
-#include <vector>
 #include <unordered_map>
-#include "Data.h"
+#include <vector>
 
 class Ring;
 
@@ -16,123 +16,128 @@ private:
     bool hasToken{false};
     bool isDragging{false};
     bool isMobile{false};
-    bool activeStatus{true}; // Nodes are active by default
+    bool activeStatus{true};
     bool isSelected{false};
-    
-    // Data storage - Dual structure for iteration and fast lookup
+
     std::vector<std::unique_ptr<DataItem>> storedData;
-    std::unordered_map<std::string, DataItem*> dataIndex;
-    
-    int tokenRangeStart{0}; // Angle in degrees
+    std::unordered_map<std::string, DataItem *> dataIndex;
+
+    int tokenRangeStart{0};
     int tokenRangeEnd{0};
 
 public:
     explicit Node(int id, std::string name, float angle);
 
-    friend auto operator<(const Node &lhs, const Node &rhs) -> bool;
-    friend auto operator>(const Node &lhs, const Node &rhs) -> bool;
-    friend auto operator!=(const Node &lhs, const Node &rhs) -> bool;
-    friend auto operator==(const Node &lhs, const Node &rhs) -> bool;
+    // Operators
+    friend bool operator<(const Node &lhs, const Node &rhs);
+    friend bool operator>(const Node &lhs, const Node &rhs);
+    friend bool operator!=(const Node &lhs, const Node &rhs);
+    friend bool operator==(const Node &lhs, const Node &rhs);
 
-    auto getPosition() const -> Vector2 { return position; }
-    auto getAngle() const -> float { return angle; }
-    auto hasTokenPresent() const -> bool { return hasToken; }
+    // Getters
+    Vector2 getPosition() const { return position; }
+    float getAngle() const { return angle; }
+    bool hasTokenPresent() const { return hasToken; }
+    const std::string &getName() const { return name; }
 
-    // Optimized accessor
-    auto getName() const -> const std::string& { return name; }
+    // Setters and Updates
+    void setAngle(float newAngle);
+    void updatePosition(Vector2 center, float radius);
+    void setPosition(Vector2 pos) { position = pos; }
+    Vector2 getVelocity() const { return velocity; }
+    void setVelocity(Vector2 vel) { velocity = vel; }
 
-    auto setAngle(float newAngle) -> void;
-    auto updatePosition(Vector2 center, float radius) -> void;
+    void setMobile(bool mobile) { isMobile = mobile; }
+    bool getMobile() const { return isMobile; }
 
-    auto setPosition(Vector2 pos) -> void { position = pos; }
-    auto getVelocity() const -> Vector2 { return velocity; }
-    auto setVelocity(Vector2 vel) -> void { velocity = vel; }
-    auto setMobile(bool mobile) -> void { isMobile = mobile; }
-    auto getMobile() const -> bool { return isMobile; }
-    auto setDragging(bool dragging) -> void { isDragging = dragging; }
-    auto getDragging() const -> bool { return isDragging; }
+    void setDragging(bool dragging) { isDragging = dragging; }
+    bool getDragging() const { return isDragging; }
 
-    auto moveFreely(float dt, Vector2 bounds) -> void;
-    auto toString() const -> std::string override;
+    // Physics
+    void moveFreely(float dt, Vector2 bounds);
+    std::string toString() const override;
+    void applyForce(Vector2 force, float dt, float maxSpeed);
+    void resetForces();
 
-    auto applyForce(Vector2 force, float dt) -> void;
-    auto resetForces() -> void;
+    // Data Management
+    void addData(std::unique_ptr<DataItem> data);
+    void removeData(const std::string &key);
+    std::vector<std::unique_ptr<DataItem>> clearData();
+    bool hasData(const std::string &key);
+    DataItem *getData(const std::string &key);
+    size_t getDataCount() const { return storedData.size(); }
+    const std::vector<std::unique_ptr<DataItem>> &getStoredData() const { return storedData; }
 
-    auto addData(std::unique_ptr<DataItem> data) -> void;
-    auto removeData(const std::string &key) -> void;
-    auto clearData() -> std::vector<std::unique_ptr<DataItem>>; // Extract all data and clear index
-    auto hasData(const std::string &key) -> bool;
-    auto getData(const std::string &key) -> DataItem*; // O(1) Access
-    auto getDataCount() const -> size_t { return storedData.size(); }
-    auto getStoredData() const -> const std::vector<std::unique_ptr<DataItem>> & {
-        return storedData;
-    }
-    
-    // Routing & Replication
     struct RoutingMessage {
         std::unique_ptr<DataItem> data;
         int targetHash;
-        bool isReplicationMessage; // If true, we are forcing storage as a replica
-        int ttl; // Time to live (hops) to prevent infinite loops
+        bool isReplicationMessage;
+        int ttl;
     };
 
-    // Returns true if accepted (arrived at destination), false if it needs to be forwarded
-    auto receiveMessage(RoutingMessage message) -> std::pair<bool, std::unique_ptr<RoutingMessage>>;
+    // Message Handling
+    std::pair<bool, std::unique_ptr<RoutingMessage>> receiveMessage(RoutingMessage message);
 
-    auto setTokenRange(int start, int end) -> void;
-    auto getTokenRangeStart() const -> int { return tokenRangeStart; }
-    auto getTokenRangeEnd() const -> int { return tokenRangeEnd; }
-    auto ownsHash(int hash) const -> bool;
+    // Token and Hashing
+    void setTokenRange(int start, int end);
+    int getTokenRangeStart() const { return tokenRangeStart; }
+    int getTokenRangeEnd() const { return tokenRangeEnd; }
+    bool ownsHash(int hash) const;
 
-    auto isActive() const -> bool { return activeStatus; }
-    auto setActive(bool active) -> void { activeStatus = active; }
+    // State
+    bool isActive() const { return activeStatus; }
+    void setActive(bool active) { activeStatus = active; }
+    bool getSelected() const { return isSelected; }
+    void setSelected(bool selected) { isSelected = selected; }
 
-    auto getSelected() const -> bool { return isSelected; }
-    auto setSelected(bool selected) -> void { isSelected = selected; }
+    // Topology
+    std::vector<Node *> neighbors;
+    std::unordered_map<Node *, int> bondAges;
 
-    // Emergent Topology
-    std::vector<Node*> neighbors;
-    std::unordered_map<Node*, int> bondAges; // Track bond stability
-
-    auto clearNeighbors() -> void { 
-        neighbors.clear(); 
+    void clearNeighbors() {
+        neighbors.clear();
         bondAges.clear();
     }
-    auto addNeighbor(Node* node) -> void { 
-        neighbors.push_back(node); 
+    void addNeighbor(Node *node) {
+        neighbors.push_back(node);
         bondAges[node] = 0;
     }
-    auto removeNeighbor(Node* node) -> void { 
-        std::erase(neighbors, node); 
-        bondAges.erase(node);
+    void removeNeighbor(Node *node) {
+        auto it = std::find(neighbors.begin(), neighbors.end(), node);
+        if (it != neighbors.end()) {
+            *it = neighbors.back();
+            neighbors.pop_back();
+            bondAges.erase(node);
+        }
     }
-    auto getNeighbors() const -> const std::vector<Node*>& { return neighbors; }
-    
-    auto incrementBondAge(Node* neighbor) -> void {
+    const std::vector<Node *> &getNeighbors() const { return neighbors; }
+
+    void incrementBondAge(Node *neighbor) {
         if (bondAges.find(neighbor) != bondAges.end()) {
             bondAges[neighbor]++;
         }
     }
-    
-    auto resetBondAge(Node* neighbor) -> void {
+
+    void resetBondAge(Node *neighbor) {
         if (bondAges.find(neighbor) != bondAges.end()) {
             bondAges[neighbor] = 0;
         }
     }
 
-    auto getBondAge(Node* node) const -> int {
-        if (bondAges.find(node) != bondAges.end()) return bondAges.at(node);
+    int getBondAge(Node *node) const {
+        if (bondAges.find(node) != bondAges.end())
+            return bondAges.at(node);
         return 0;
     }
 
-    // Cluster/Ring ID for logic
+    // Clustering
     int clusterId = -1;
-    auto setClusterId(int id) -> void { clusterId = id; }
-    auto getClusterId() const -> int { return clusterId; }
+    void setClusterId(int id) { clusterId = id; }
+    int getClusterId() const { return clusterId; }
 
     int clusterSize = 1;
-    auto setClusterSize(int size) -> void { clusterSize = size; }
-    auto getClusterSize() const -> int { return clusterSize; }
+    void setClusterSize(int size) { clusterSize = size; }
+    int getClusterSize() const { return clusterSize; }
 
     friend class Ring;
     friend class Visualizer;

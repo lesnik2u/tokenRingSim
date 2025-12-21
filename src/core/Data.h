@@ -1,7 +1,7 @@
 #pragma once
-#include <string>
 #include <format>
 #include <memory>
+#include <string>
 
 class DataItem {
 private:
@@ -10,39 +10,41 @@ private:
     int hash;
     bool isReplica;
 
-    auto calculateHash(const std::string& str) -> int {
+    // Helper for consistent hashing
+    int calculateHash(const std::string &str) {
         std::hash<std::string> hasher;
         size_t h = hasher(str);
-        return static_cast<int>(h % 360); // Hash to 0-360 range (degrees)
+        return static_cast<int>(h % 360);
     }
 
 public:
-    // Efficient constructor sharing existing string storage
-    DataItem(std::shared_ptr<const std::string> key, std::shared_ptr<const std::string> value, bool isReplica = false)
+    // Constructor using shared pointers
+    DataItem(std::shared_ptr<const std::string> key, std::shared_ptr<const std::string> value,
+             bool isReplica = false)
         : key(std::move(key)), value(std::move(value)), isReplica(isReplica) {
         hash = calculateHash(*this->key);
     }
 
-    // Convenience constructor for fresh strings
+    // Constructor creating new strings
     DataItem(std::string key, std::string value, bool isReplica = false)
-        : key(std::make_shared<std::string>(std::move(key))), 
-          value(std::make_shared<std::string>(std::move(value))), 
-          isReplica(isReplica) {
+        : key(std::make_shared<std::string>(std::move(key))),
+          value(std::make_shared<std::string>(std::move(value))), isReplica(isReplica) {
         hash = calculateHash(*this->key);
     }
 
-    auto getKey() const -> const std::string& { return *key; }
-    auto getValue() const -> const std::string& { return *value; }
-    
-    // Access to shared pointers for propagation
-    auto getKeyPtr() const -> std::shared_ptr<const std::string> { return key; }
-    auto getValuePtr() const -> std::shared_ptr<const std::string> { return value; }
+    // Accessors
+    const std::string &getKey() const { return *key; }
+    const std::string &getValue() const { return *value; }
 
-    auto getHash() const -> int { return hash; }
-    auto getIsReplica() const -> bool { return isReplica; }
-    auto setIsReplica(bool replica) -> void { isReplica = replica; }
+    std::shared_ptr<const std::string> getKeyPtr() const { return key; }
+    std::shared_ptr<const std::string> getValuePtr() const { return value; }
 
-    auto toString() const -> std::string {
-        return std::format("Data[key={}, hash={}°, value={}, replica={}]", *key, hash, *value, isReplica);
+    int getHash() const { return hash; }
+    bool getIsReplica() const { return isReplica; }
+    void setIsReplica(bool replica) { isReplica = replica; }
+
+    std::string toString() const {
+        return std::format("Data[key={}, hash={}°, value={}, replica={}]", *key, hash, *value,
+                           isReplica);
     }
 };

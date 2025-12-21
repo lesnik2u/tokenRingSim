@@ -1,25 +1,26 @@
 #pragma once
 #include "Entity.h"
 
-class Ring; // forward declaration
+class Ring;
 
 class Token : public Entity {
 private:
     int currentNodeId;
-    int previousNodeId{-1}; // Track history for directional traversal
+    int previousNodeId{-1};
     float travelProgress{0.0f};
-    
+
 public:
-    Token(int id);
-    
-    auto getCurrentNodeId() const -> int { return currentNodeId; }
-    auto getPreviousNodeId() const -> int { return previousNodeId; }
-    auto getTravelProgress() const -> float { return travelProgress; }
-    
-    auto moveToNextNode(int nextNodeId) -> void;
-    auto updateTravel(float deltaProgress) -> void;
-    
-    auto toString() const -> std::string override;
-    
-    friend class Ring;
+    explicit Token(int id);
+
+    // Setters and Getters
+    void setCurrentNodeId(int nodeId) { currentNodeId = nodeId; }
+    int getCurrentNodeId() const { return currentNodeId; }
+    int getPreviousNodeId() const { return previousNodeId; }
+
+    // Movement Logic
+    void moveToNextNode(int nextNodeId);
+    void updateTravel(float deltaProgress);
+    float getTravelProgress() const { return travelProgress; }
+
+    std::string toString() const override;
 };
