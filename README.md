@@ -1,9 +1,6 @@
 # What is this?
 Academic project for a token ring simulation -- Object Oriented Programming class
 
-# Why
-For fun
-
 # How to install and run
 
 ## Prerequisites
